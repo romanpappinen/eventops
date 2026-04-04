@@ -1,0 +1,7 @@
+{
+  "extends": "@eventops/tsconfig/vue.json",
+  "compilerOptions": {
+    "baseUrl": "."
+  },
+  "include": ["src"]
+}

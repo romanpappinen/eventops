@@ -1,0 +1,17 @@
+{
+  "name": "@eventops/validation",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "echo lint validation",
+    "test": "echo test validation"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "extends": "@eventops/tsconfig/node.json",
+  "include": ["src"]
+}

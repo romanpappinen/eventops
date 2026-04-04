@@ -1,0 +1,7 @@
+{
+  "extends": "@eventops/tsconfig/node.json",
+  "compilerOptions": {
+    "baseUrl": "."
+  },
+  "include": ["src"]
+}
