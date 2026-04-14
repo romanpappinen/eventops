@@ -1,0 +1,29 @@
+{
+  "name": "eventops-dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspaces/eventops",
+  "remoteUser": "node",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "Vue.volar",
+        "ms-vscode.vscode-typescript-next"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "mounts": [
+    "source=eventops-codex-home,target=/home/node/.codex,type=volume"
+  ],
+  "postCreateCommand": "pnpm install",
+  "containerEnv": {
+    "NODE_ENV": "development",
+    "FORCE_COLOR": "1"
+  }
+}

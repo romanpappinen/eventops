@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { getHealthMessage } from '@eventops/shared';
+import {tenantsRouter} from "./modules/tenants/tenants.routes";
 
 export function createApp() {
     const app = express();
@@ -14,6 +15,8 @@ export function createApp() {
             service: getHealthMessage()
         });
     });
+
+    app.use('/tenants', tenantsRouter);
 
     return app;
 }

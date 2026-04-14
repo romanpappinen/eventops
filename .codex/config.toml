@@ -1,0 +1,45 @@
+model = "gpt-5-codex"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+allow_login_shell = false
+web_search = "disabled"
+cli_auth_credentials_store = "file"
+
+[sandbox_workspace_write]
+network_access = false
+exclude_tmpdir_env_var = false
+exclude_slash_tmp = false
+
+[shell_environment_policy]
+inherit = "none"
+ignore_default_excludes = false
+include_only = [
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "TERM",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "CI",
+    "FORCE_COLOR",
+    "NODE_ENV"
+]
+exclude = [
+    "AWS_*",
+    "AZURE_*",
+    "GCP_*",
+    "GOOGLE_*",
+    "OPENAI_*",
+    "SUPABASE_*",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "POSTGRES_*",
+    "PG*",
+    "STRIPE_*",
+    "GITHUB_TOKEN",
+    "NPM_TOKEN",
+    "SSH_*"
+]
+set = { NODE_ENV = "development" }
