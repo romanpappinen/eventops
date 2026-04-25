@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { supabaseAuth } from '../lib/supabase.js';
+import { getSupabaseAuth } from '../lib/supabase.js';
 
 export interface AuthenticatedRequest extends Request {
     authUser?: {
@@ -22,6 +22,8 @@ export async function requireAuth(
     }
 
     const token = authHeader.slice('Bearer '.length).trim();
+    const supabaseAuth = getSupabaseAuth();
+
 
     const { data, error } = await supabaseAuth.auth.getUser(token);
 

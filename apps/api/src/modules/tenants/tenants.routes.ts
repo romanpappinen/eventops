@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { requireAuth, type AuthenticatedRequest } from '../../middleware/require-auth.js';
 import { ensureUserProfile } from '../auth/ensure-user-profile.js';
-import { supabaseAdmin } from '../../lib/supabase.js';
+import { getSupabaseAdmin } from '../../lib/supabase.js';
 import { createTenantSchema } from './tenant.schemas.js';
 
 export const tenantsRouter = Router();
 
 tenantsRouter.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
     const userId = req.authUser!.id;
-
+    
+    const supabaseAdmin = getSupabaseAdmin()
     const { data, error } = await supabaseAdmin
         .from('memberships')
         .select(`
@@ -53,6 +54,8 @@ tenantsRouter.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
         avatarUrl: authUser.avatarUrl,
     });
 
+
+    const supabaseAdmin = getSupabaseAdmin()
     const { data: tenant, error: tenantError } = await supabaseAdmin
         .from('tenants')
         .insert({

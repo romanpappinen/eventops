@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../../lib/supabase.js';
+import { getSupabaseAdmin } from '../../lib/supabase.js';
 
 interface EnsureUserProfileInput {
     id: string;
@@ -8,6 +8,7 @@ interface EnsureUserProfileInput {
 }
 
 export async function ensureUserProfile(input: EnsureUserProfileInput) {
+    const supabaseAdmin = getSupabaseAdmin()
     const { error } = await supabaseAdmin.from('users').upsert(
         {
             id: input.id,
