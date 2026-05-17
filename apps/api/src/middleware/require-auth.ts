@@ -24,25 +24,28 @@ export async function requireAuth(
     const token = authHeader.slice('Bearer '.length).trim();
     const supabaseAuth = getSupabaseAuth();
 
+    try {
+        const { data, error } = await supabaseAuth.auth.getUser(token);
 
-    const { data, error } = await supabaseAuth.auth.getUser(token);
+        if (error || !data.user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
 
-    if (error || !data.user) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        req.authUser = {
+            id: data.user.id,
+            email: data.user.email,
+            fullName:
+                typeof data.user.user_metadata?.full_name === 'string'
+                    ? data.user.user_metadata.full_name
+                    : null,
+            avatarUrl:
+                typeof data.user.user_metadata?.avatar_url === 'string'
+                    ? data.user.user_metadata.avatar_url
+                    : null,
+        };
+
+        next();
+    } catch {
+        return res.status(503).json({ error: 'Auth service unavailable' });
     }
-
-    req.authUser = {
-        id: data.user.id,
-        email: data.user.email,
-        fullName:
-            typeof data.user.user_metadata?.full_name === 'string'
-                ? data.user.user_metadata.full_name
-                : null,
-        avatarUrl:
-            typeof data.user.user_metadata?.avatar_url === 'string'
-                ? data.user.user_metadata.avatar_url
-                : null,
-    };
-
-    next();
 }

@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { getHealthMessage } from '@eventops/shared';
+import { authRouter } from './modules/auth/auth.routes.js';
 import {tenantsRouter} from "./modules/tenants/tenants.routes";
 
 export function createApp() {
@@ -16,6 +17,7 @@ export function createApp() {
         });
     });
 
+    app.use('/auth', authRouter);
     app.use('/tenants', tenantsRouter);
 
     return app;
