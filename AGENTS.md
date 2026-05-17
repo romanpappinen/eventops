@@ -14,6 +14,8 @@ Never read, print, summarize, diff, or modify:
 - cloud credential files
 - .npmrc
 - CI secret stores
+- supabase/config.toml secrets
+- any file under supabase/.temp
 
 Use only:
 - .env.example
