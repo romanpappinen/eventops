@@ -686,33 +686,75 @@ Codex can suggest and implement changes, but every diff must be reviewed by the 
 
 ## Current Status
 
-The project currently has:
+Diary:
 
-* working monorepo setup
-* running Dev Container
-* local Supabase configuration and migrations
-* API health endpoints
-* API tests and typecheck
-* lazy Supabase client helpers
-* authentication middleware foundation
-* initial tenant module structure
-* Codex CLI configured for controlled local development
+### 2026-05-18
+
+Done in `apps/api`:
+
+* health endpoints are mounted at `GET /health`, `GET /ready`, and `GET /live`
+* auth routes include `POST /auth/register` and protected `GET /auth/me`
+* bearer-token auth is enforced through `requireAuth`
+* tenant routes support list, create, get, update, archive, and owner-only invitations
+* shared API primitives now exist for `ApiError`, async route wrapping, request validation, and a global error handler
+* the event ingestion module now supports `POST /tenants/:tenantId/events` and `GET /tenants/:tenantId/events`
+* event create and list now use a user-scoped Supabase client instead of the service-role client
+* `requireAuth` now keeps the bearer access token on the request so RLS-backed services can use user context
+* integration tests now cover health, auth registration, auth me, tenant authorization, tenant creation, invitations, tenant CRUD, event creation, and event listing
+
+Done in `apps/web`:
+
+* Vue router includes protected routes for home, tenants, tenant creation, and tenant settings
+* guest-only routes exist for login and registration
+* auth state is managed through Pinia with Supabase session initialization
+* the frontend calls the backend for `GET /auth/me`, tenant listing, tenant creation, and tenant invitations
+* login and registration pages are implemented
+* tenants can be listed from the API, created from the UI, and opened in a tenant settings page
+* tenant settings currently support owner invitation flow, but not tenant update or archive actions
+
+Repo-level foundation still in place:
+
+* monorepo workspace structure is running across `apps/*` and `packages/*`
+* Supabase migrations and local config are present for the current tenant and event model
+* the project is set up for local development in the Dev Container with typed config packages and shared utilities
+
+Done in `supabase` and docs:
+
+* `0004_events.sql` adds the `events` table and initial event RLS foundation
+* `0005_events_insert_policy.sql` adds the event `INSERT` policy for authenticated tenant members
+* `0006_rls_rpc_foundation.sql` strengthens tenant and membership read policies, adds self-service user policies, hardens current RPCs for authenticated user-context calls, and grants authenticated execute access to the current tenant RPCs
+* [docs/rls-rpc-plan.md](/workspaces/eventops/docs/rls-rpc-plan.md:1) now records the route-by-route RLS vs RPC migration plan
 
 ---
 
 ## Next Recommended Step
 
-The next small backend feature should be:
+Diary:
+
+### 2026-05-18
+
+Next:
 
 ```txt
-GET /auth/me
+GET /tenants
 ```
 
-Why this is the best next step:
+Why this should be next:
 
-* validates the existing auth middleware
-* confirms Supabase token integration
-* creates a foundation for frontend auth
-* is small enough for one branch and one PR
+* the events routes now establish the intended RLS-first request pattern
+* `GET /tenants` is the next simplest existing route still using service-role-backed reads
+* the new migration foundation already tightens tenant and membership read policies for a user-context implementation
+* migrating tenant list first will validate the route inventory in [docs/rls-rpc-plan.md](/workspaces/eventops/docs/rls-rpc-plan.md:181)
 
-After that, tenant creation and listing can be hardened and connected to the frontend.
+Recommended first slice:
+
+* switch tenant list to `getSupabaseUser(authToken)` instead of `getSupabaseAdmin()`
+* rely on `tenants` and `memberships` read RLS instead of admin-backed membership checks
+* recreate tenant list tests around RLS-visible rows rather than admin middleware assumptions
+* keep tenant create and invitation flows on RPC while tenant reads are migrated
+
+After that:
+
+* migrate `GET /tenants/:tenantId` to the same RLS-first read pattern
+* review shared runtime validation export wiring so query validators can stay fully shared at runtime
+* keep moving route-by-route from service role reads toward user-context RLS reads, while leaving multi-table writes on RPC

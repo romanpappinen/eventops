@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { getSupabaseAuth } from '../lib/supabase.js';
 
 export interface AuthenticatedRequest extends Request {
+    authToken?: string;
     authUser?: {
         id: string;
         email?: string;
@@ -43,6 +44,7 @@ export async function requireAuth(
                     ? data.user.user_metadata.avatar_url
                     : null,
         };
+        req.authToken = token;
 
         next();
     } catch {

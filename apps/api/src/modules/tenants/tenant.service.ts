@@ -1,5 +1,6 @@
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
 import { getSupabaseAdmin } from '../../lib/supabase.js';
+import { ApiError } from '../../lib/api-error.js';
 import { ensureUserProfile } from '../auth/ensure-user-profile.js';
 import type {
     CreateTenantInput,
@@ -7,16 +8,8 @@ import type {
     UpdateTenantInput,
 } from './tenant.schemas.js';
 
-const tenantErrorStatus = Symbol('tenantErrorStatus');
-
-type TenantServiceError = Error & {
-    [tenantErrorStatus]?: number;
-};
-
 function createTenantError(message: string, statusCode: number) {
-    const error = new Error(message) as TenantServiceError;
-    error[tenantErrorStatus] = statusCode;
-    return error;
+    return new ApiError(statusCode, message);
 }
 
 function normalizeTenantRecord(record: {
@@ -41,17 +34,6 @@ function normalizeTenantRecord(record: {
         created_by_user_id: record.created_by_user_id,
         updated_at: record.updated_at,
     };
-}
-
-export function getTenantErrorStatus(error: unknown) {
-    if (typeof error === 'object' && error !== null && tenantErrorStatus in error) {
-        const statusCode = (error as TenantServiceError)[tenantErrorStatus];
-        if (typeof statusCode === 'number') {
-            return statusCode;
-        }
-    }
-
-    return 500;
 }
 
 function toSlug(input: string) {
