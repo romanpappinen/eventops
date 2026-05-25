@@ -13,5 +13,9 @@
   },
   "dependencies": {
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@eventops/tsconfig": "workspace:*",
+    "@types/node": "^22.7.4"
   }
 }

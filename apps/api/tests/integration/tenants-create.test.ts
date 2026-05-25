@@ -14,7 +14,7 @@ vi.mock('../../src/lib/supabase.js', () => ({
             getUser,
         },
     }),
-    getSupabaseAdmin: () => ({
+    getSupabaseUser: () => ({
         rpc,
         from: vi.fn(),
     }),
@@ -94,7 +94,7 @@ describe('POST /tenants', () => {
                 description: 'Operations workspace',
             });
 
-        expect(ensureUserProfile).toHaveBeenCalledWith({
+        expect(ensureUserProfile).toHaveBeenCalledWith('valid-token', {
             id: 'user-123',
             email: 'owner@example.com',
             fullName: 'Owner User',
@@ -104,7 +104,6 @@ describe('POST /tenants', () => {
             p_name: 'Acme Ops',
             p_slug: 'acme-ops',
             p_description: 'Operations workspace',
-            p_created_by_user_id: 'user-123',
         });
         expect(response.status).toBe(201);
         expect(response.body).toEqual({

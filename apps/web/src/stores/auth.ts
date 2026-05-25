@@ -23,6 +23,10 @@ function getDisplayName(user: User | null) {
   return user.email ?? null
 }
 
+async function clearBrokenSession() {
+  await supabase.auth.signOut({ scope: 'local' })
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     session: null as Session | null,
@@ -60,12 +64,22 @@ export const useAuthStore = defineStore('auth', {
         this.user = await getCurrentUser(session.access_token)
         this.status = 'authenticated'
       } catch (currentUserError) {
+        const message =
+          currentUserError instanceof Error ? currentUserError.message : 'Failed to load current user'
+
+        if (message === 'Unauthorized') {
+          await clearBrokenSession()
+          this.session = null
+          this.supabaseUser = null
+          this.user = null
+          this.status = 'idle'
+          this.error = null
+          return
+        }
+
         this.user = null
         this.status = 'error'
-        this.error =
-          currentUserError instanceof Error
-            ? currentUserError.message
-            : 'Failed to load current user'
+        this.error = message
       }
     },
     async initialize() {
@@ -93,6 +107,21 @@ export const useAuthStore = defineStore('auth', {
         const { data, error } = await supabase.auth.getSession()
 
         if (error) {
+          const isRefreshTokenError =
+            error.message.includes('Invalid Refresh Token') ||
+            error.message.includes('Refresh Token Not Found')
+
+          if (isRefreshTokenError) {
+            await clearBrokenSession()
+            this.session = null
+            this.supabaseUser = null
+            this.user = null
+            this.status = 'idle'
+            this.error = null
+            this.initialized = true
+            return
+          }
+
           this.status = 'error'
           this.error = error.message
           this.initialized = true

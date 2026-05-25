@@ -56,6 +56,31 @@ export const tenantParamsSchema = z.object({
 
 export type TenantParams = z.infer<typeof tenantParamsSchema>;
 
+export const tenantInvitationParamsSchema = z.object({
+    invitationId: z.string().uuid(),
+});
+
+export type TenantInvitationParams = z.infer<typeof tenantInvitationParamsSchema>;
+
+export const tenantInvitationRouteParamsSchema = z.object({
+    tenantId: z.string().uuid(),
+    invitationId: z.string().uuid(),
+});
+
+export type TenantInvitationRouteParams = z.infer<typeof tenantInvitationRouteParamsSchema>;
+
+export const invitationAcceptLookupSchema = z.object({
+    token: z.string().trim().min(1),
+});
+
+export type InvitationAcceptLookup = z.infer<typeof invitationAcceptLookupSchema>;
+
+export const acceptInvitationSchema = z.object({
+    token: z.string().trim().min(1),
+}).strict();
+
+export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;
+
 export const inviteTenantMemberSchema = z.object({
     email: z.string().trim().email().transform((value) => value.toLowerCase()),
     role: z.enum(['admin', 'member']).default('member'),

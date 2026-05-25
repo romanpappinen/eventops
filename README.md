@@ -686,33 +686,104 @@ Codex can suggest and implement changes, but every diff must be reviewed by the 
 
 ## Current Status
 
-The project currently has:
+Diary:
 
-* working monorepo setup
-* running Dev Container
-* local Supabase configuration and migrations
-* API health endpoints
-* API tests and typecheck
-* lazy Supabase client helpers
-* authentication middleware foundation
-* initial tenant module structure
-* Codex CLI configured for controlled local development
+### 2026-05-25
+
+Done in `apps/api`:
+
+* invitation creation now generates a one-time accept token, stores only its hash on the invitation record, and queues email delivery work in `invitation_email_jobs`
+* owner invitation management now includes listing and revoke flows
+* invitation activation now uses `GET /invitations/accept` and `POST /invitations/accept` with authenticated email matching, expiry checks, archived-tenant checks, and single-use token acceptance
+* invitation and tenant APIs now expose invitation delivery state and expiry metadata for the frontend
+* invitation acceptance and invitation preview integration tests now cover token-based activation, expiry, archived tenants, and mismatched emails
+
+Done in `apps/worker`:
+
+* the worker now polls invitation email jobs from Supabase, sends invitation emails through Resend, and updates delivery status on both the job row and the invitation row
+* invitation emails now use `/accept-invite?token=...` links instead of raw invitation ids
+* worker retries now preserve queue state and clear raw accept tokens from jobs after successful or terminal processing
+
+Done in `apps/web`:
+
+* the frontend now has an `/accept-invite` page that loads invitation details, handles authenticated acceptance, and routes invited users into the tenant list after success
+* login and registration now preserve the invitation flow without copying the raw token through redirect query strings
+* auth session recovery now clears broken local Supabase refresh tokens instead of leaving the app in a repeated `401 /auth/me` state
+
+Done in `supabase` and security hardening:
+
+* `0010_invitation_email_delivery.sql` adds invitation delivery status fields and the durable invitation email job table
+* `0011_invitation_accept_tokens.sql` adds hashed invitation accept tokens, expiry metadata, and the token-based acceptance RPC
+* `0012_invitation_security_hardening.sql` locks down `invitation_email_jobs` with RLS and revokes direct table access from app roles
+* `0013_rls_membership_helpers.sql` replaces recursive membership/tenant/event/invitation policies with security-definer helper functions to avoid RLS recursion failures in live flows
+
+### 2026-05-18
+
+Done in `apps/api`:
+
+* health endpoints are mounted at `GET /health`, `GET /ready`, and `GET /live`
+* auth routes include `POST /auth/register` and protected `GET /auth/me`
+* bearer-token auth is enforced through `requireAuth`
+* tenant routes support list, create, get, update, archive, and owner-only invitations
+* shared API primitives now exist for `ApiError`, async route wrapping, request validation, and a global error handler
+* the event ingestion module now supports `POST /tenants/:tenantId/events` and `GET /tenants/:tenantId/events`
+* event create and list now use a user-scoped Supabase client instead of the service-role client
+* `requireAuth` now keeps the bearer access token on the request so RLS-backed services can use user context
+* integration tests now cover health, auth registration, auth me, tenant authorization, tenant creation, invitations, tenant CRUD, event creation, and event listing
+
+Done in `apps/web`:
+
+* Vue router includes protected routes for home, tenants, tenant creation, and tenant settings
+* guest-only routes exist for login and registration
+* auth state is managed through Pinia with Supabase session initialization
+* the frontend calls the backend for `GET /auth/me`, tenant listing, tenant creation, and tenant invitations
+* login and registration pages are implemented
+* tenants can be listed from the API, created from the UI, and opened in a tenant settings page
+* tenant settings currently support owner invitation flow, but not tenant update or archive actions
+
+Repo-level foundation still in place:
+
+* monorepo workspace structure is running across `apps/*` and `packages/*`
+* Supabase migrations and local config are present for the current tenant and event model
+* the project is set up for local development in the Dev Container with typed config packages and shared utilities
+
+Done in `supabase` and docs:
+
+* `0004_events.sql` adds the `events` table and initial event RLS foundation
+* `0005_events_insert_policy.sql` adds the event `INSERT` policy for authenticated tenant members
+* `0006_rls_rpc_foundation.sql` strengthens tenant and membership read policies, adds self-service user policies, hardens current RPCs for authenticated user-context calls, and grants authenticated execute access to the current tenant RPCs
+* [docs/rls-rpc-plan.md](/workspaces/eventops/docs/rls-rpc-plan.md:1) now records the route-by-route RLS vs RPC migration plan
 
 ---
 
 ## Next Recommended Step
 
-The next small backend feature should be:
+Diary:
+
+### 2026-05-25
+
+Next:
 
 ```txt
-GET /auth/me
+invitation resend + cleanup
 ```
 
-Why this is the best next step:
+Why this should be next:
 
-* validates the existing auth middleware
-* confirms Supabase token integration
-* creates a foundation for frontend auth
-* is small enough for one branch and one PR
+* the invitation flow is now operational end to end, so the next highest-value work is operational resilience rather than core correctness
+* failed deliveries and expired invitations now have durable state in the database, which makes resend and cleanup the natural next slice
+* owners can already list invitations, so resend/expire actions can build directly on the current UI and API contracts
+* background delivery now exists in the worker, so retry/backoff and cleanup behavior can be extended without redesigning the architecture
 
-After that, tenant creation and listing can be hardened and connected to the frontend.
+Recommended first slice:
+
+* add an owner-only resend invitation endpoint that regenerates a fresh accept token, resets expiry, and enqueues a new email job
+* add a small cleanup path for expired invitations and permanently failed email jobs
+* extend invitation list responses and the tenant settings UI with resend/error visibility
+* add focused worker tests around retry exhaustion and token regeneration behavior
+
+After that:
+
+* add invitation expiry and resend admin controls in the frontend
+* move worker-only delivery state into a dedicated private schema if stricter database isolation is needed
+* add a periodic cleanup or maintenance worker for expired invitations and stale queue rows

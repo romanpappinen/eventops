@@ -1,5 +1,6 @@
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
-import { getSupabaseAdmin } from '../../lib/supabase.js';
+import { getSupabaseAuth } from '../../lib/supabase.js';
+import { ApiError } from '../../lib/api-error.js';
 import type { RegisterInput } from './auth.schemas.js';
 import { ensureUserProfile } from './ensure-user-profile.js';
 
@@ -24,15 +25,16 @@ interface RegisterUserResult {
 }
 
 export async function registerUser(input: RegisterInput): Promise<RegisterUserResult> {
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAuth = getSupabaseAuth();
     const fullName = `${input.firstName} ${input.lastName}`.trim();
 
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    const { data, error } = await supabaseAuth.auth.signUp({
         email: input.email,
         password: input.password,
-        email_confirm: true,
-        user_metadata: {
-            full_name: fullName,
+        options: {
+            data: {
+                full_name: fullName,
+            },
         },
     });
 
@@ -40,9 +42,7 @@ export async function registerUser(input: RegisterInput): Promise<RegisterUserRe
         const message = error.message.toLowerCase();
 
         if (message.includes('already') || message.includes('registered') || message.includes('exists')) {
-            const conflictError = new Error('Email already registered');
-            (conflictError as Error & { statusCode?: number }).statusCode = 409;
-            throw conflictError;
+            throw new ApiError(409, 'Email already registered');
         }
 
         if (
@@ -51,35 +51,29 @@ export async function registerUser(input: RegisterInput): Promise<RegisterUserRe
             message.includes('invalid') ||
             message.includes('signup')
         ) {
-            const requestError = new Error(error.message);
-            (requestError as Error & { statusCode?: number }).statusCode = 400;
-            throw requestError;
+            throw new ApiError(400, error.message);
         }
 
-        const upstreamError = new Error('Registration is temporarily unavailable');
-        (upstreamError as Error & { statusCode?: number }).statusCode = 502;
-        throw upstreamError;
+        throw new ApiError(502, 'Registration is temporarily unavailable');
     }
 
     const authUser = data.user;
 
     if (!authUser) {
-        const registrationError = new Error('Registration did not return a user');
-        (registrationError as Error & { statusCode?: number }).statusCode = 500;
-        throw registrationError;
+        throw new ApiError(500, 'Registration did not return a user');
     }
 
-    try {
-        await ensureUserProfile({
-            id: authUser.id,
-            email: authUser.email ?? input.email,
-            fullName,
-            avatarUrl: null,
-        });
-    } catch {
-        const profileError = new Error('Registration failed while creating the user profile');
-        (profileError as Error & { statusCode?: number }).statusCode = 500;
-        throw profileError;
+    if (data.session?.access_token) {
+        try {
+            await ensureUserProfile(data.session.access_token, {
+                id: authUser.id,
+                email: authUser.email ?? input.email,
+                fullName,
+                avatarUrl: null,
+            });
+        } catch {
+            throw new ApiError(500, 'Registration failed while creating the user profile');
+        }
     }
 
     return {
@@ -89,7 +83,9 @@ export async function registerUser(input: RegisterInput): Promise<RegisterUserRe
             fullName,
             avatarUrl: null,
         },
-        requiresEmailConfirmation: false,
-        message: 'Registration succeeded. Sign in with your new account.',
+        requiresEmailConfirmation: !data.session,
+        message: data.session
+            ? 'Registration succeeded. Sign in with your new account.'
+            : 'Registration succeeded. Check your email to confirm your account.',
     };
 }

@@ -8,17 +8,22 @@ export const router = createRouter({
   routes,
 })
 
-router.beforeEach(async (to: { meta: Record<string, unknown> }) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore(pinia)
 
   await auth.initialize()
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
-    return { name: routeNames.login }
+    return { name: routeNames.login, query: { redirect: to.fullPath } }
   }
 
   if (to.meta.guestOnly && auth.isAuthenticated) {
-    return { name: routeNames.home }
+    const redirect =
+      typeof to.query.redirect === 'string' && to.query.redirect.length > 0
+        ? to.query.redirect
+        : null
+
+    return redirect ?? { name: routeNames.home }
   }
 
   return true

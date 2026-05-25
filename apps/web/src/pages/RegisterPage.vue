@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { routeNames } from '../core/navigation/routes'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 
 const firstName = ref('')
@@ -36,7 +37,14 @@ async function onSubmit() {
   confirmPassword.value = ''
 
   if (result === 'pending_confirmation') {
-    await router.push({ name: routeNames.login })
+    const invitationToken = sessionStorage.getItem('invitation_accept_token')
+    await router.push({
+      name: invitationToken ? routeNames.invitationAccept : routeNames.login,
+      query:
+        !invitationToken && typeof route.query.redirect === 'string'
+          ? { redirect: route.query.redirect }
+          : {},
+    })
   }
 }
 </script>
@@ -118,7 +126,17 @@ async function onSubmit() {
 
       <p class="footnote">
         Already registered?
-        <RouterLink :to="{ name: routeNames.login }">Sign in</RouterLink>
+        <RouterLink
+          :to="{
+            name: routeNames.login,
+            query:
+              typeof route.query.redirect === 'string'
+                ? { redirect: route.query.redirect }
+                : {},
+          }"
+        >
+          Sign in
+        </RouterLink>
       </p>
 
       <p v-if="auth.registrationMessage" class="feedback feedback-success">
