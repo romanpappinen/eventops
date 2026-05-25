@@ -1,5 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router'
 import HomePage from '../../pages/HomePage.vue'
+import InvitationAcceptPage from '../../pages/InvitationAcceptPage.vue'
 import LoginPage from '../../pages/LoginPage.vue'
 import RegisterPage from '../../pages/RegisterPage.vue'
 import TenantCreatePage from '../../pages/TenantCreatePage.vue'
@@ -10,6 +11,7 @@ export const routeNames = {
   home: 'home',
   login: 'login',
   register: 'register',
+  invitationAccept: 'invitationAccept',
   tenants: 'tenants',
   tenantCreate: 'tenantCreate',
   tenantEdit: 'tenantEdit',
@@ -50,6 +52,14 @@ export const routes: RouteRecordRaw[] = [
     meta: {
       layout: 'default',
       requiresAuth: true,
+    },
+  },
+  {
+    path: '/accept-invite',
+    name: routeNames.invitationAccept,
+    component: InvitationAcceptPage,
+    meta: {
+      layout: 'blank',
     },
   },
   {

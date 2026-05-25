@@ -688,6 +688,35 @@ Codex can suggest and implement changes, but every diff must be reviewed by the 
 
 Diary:
 
+### 2026-05-25
+
+Done in `apps/api`:
+
+* invitation creation now generates a one-time accept token, stores only its hash on the invitation record, and queues email delivery work in `invitation_email_jobs`
+* owner invitation management now includes listing and revoke flows
+* invitation activation now uses `GET /invitations/accept` and `POST /invitations/accept` with authenticated email matching, expiry checks, archived-tenant checks, and single-use token acceptance
+* invitation and tenant APIs now expose invitation delivery state and expiry metadata for the frontend
+* invitation acceptance and invitation preview integration tests now cover token-based activation, expiry, archived tenants, and mismatched emails
+
+Done in `apps/worker`:
+
+* the worker now polls invitation email jobs from Supabase, sends invitation emails through Resend, and updates delivery status on both the job row and the invitation row
+* invitation emails now use `/accept-invite?token=...` links instead of raw invitation ids
+* worker retries now preserve queue state and clear raw accept tokens from jobs after successful or terminal processing
+
+Done in `apps/web`:
+
+* the frontend now has an `/accept-invite` page that loads invitation details, handles authenticated acceptance, and routes invited users into the tenant list after success
+* login and registration now preserve the invitation flow without copying the raw token through redirect query strings
+* auth session recovery now clears broken local Supabase refresh tokens instead of leaving the app in a repeated `401 /auth/me` state
+
+Done in `supabase` and security hardening:
+
+* `0010_invitation_email_delivery.sql` adds invitation delivery status fields and the durable invitation email job table
+* `0011_invitation_accept_tokens.sql` adds hashed invitation accept tokens, expiry metadata, and the token-based acceptance RPC
+* `0012_invitation_security_hardening.sql` locks down `invitation_email_jobs` with RLS and revokes direct table access from app roles
+* `0013_rls_membership_helpers.sql` replaces recursive membership/tenant/event/invitation policies with security-definer helper functions to avoid RLS recursion failures in live flows
+
 ### 2026-05-18
 
 Done in `apps/api`:
@@ -731,30 +760,30 @@ Done in `supabase` and docs:
 
 Diary:
 
-### 2026-05-18
+### 2026-05-25
 
 Next:
 
 ```txt
-GET /tenants
+invitation resend + cleanup
 ```
 
 Why this should be next:
 
-* the events routes now establish the intended RLS-first request pattern
-* `GET /tenants` is the next simplest existing route still using service-role-backed reads
-* the new migration foundation already tightens tenant and membership read policies for a user-context implementation
-* migrating tenant list first will validate the route inventory in [docs/rls-rpc-plan.md](/workspaces/eventops/docs/rls-rpc-plan.md:181)
+* the invitation flow is now operational end to end, so the next highest-value work is operational resilience rather than core correctness
+* failed deliveries and expired invitations now have durable state in the database, which makes resend and cleanup the natural next slice
+* owners can already list invitations, so resend/expire actions can build directly on the current UI and API contracts
+* background delivery now exists in the worker, so retry/backoff and cleanup behavior can be extended without redesigning the architecture
 
 Recommended first slice:
 
-* switch tenant list to `getSupabaseUser(authToken)` instead of `getSupabaseAdmin()`
-* rely on `tenants` and `memberships` read RLS instead of admin-backed membership checks
-* recreate tenant list tests around RLS-visible rows rather than admin middleware assumptions
-* keep tenant create and invitation flows on RPC while tenant reads are migrated
+* add an owner-only resend invitation endpoint that regenerates a fresh accept token, resets expiry, and enqueues a new email job
+* add a small cleanup path for expired invitations and permanently failed email jobs
+* extend invitation list responses and the tenant settings UI with resend/error visibility
+* add focused worker tests around retry exhaustion and token regeneration behavior
 
 After that:
 
-* migrate `GET /tenants/:tenantId` to the same RLS-first read pattern
-* review shared runtime validation export wiring so query validators can stay fully shared at runtime
-* keep moving route-by-route from service role reads toward user-context RLS reads, while leaving multi-table writes on RPC
+* add invitation expiry and resend admin controls in the frontend
+* move worker-only delivery state into a dedicated private schema if stricter database isolation is needed
+* add a periodic cleanup or maintenance worker for expired invitations and stale queue rows

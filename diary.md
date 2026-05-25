@@ -81,3 +81,36 @@ From the code and docs, the biggest unfinished area is tenant-route migration:
 * RLS work is in SQL migrations, not a dedicated `supabase/rls` folder.
 * Do not inspect or use `supabase/.temp`.
 * Keep service-role usage narrow: auth admin, explicit privileged RPC/bootstrap paths, and worker-only flows.
+
+---
+
+Date: 2026-05-19
+
+## Iteration update
+
+This iteration moved the API route layer to a user-context-only Supabase model.
+
+Done:
+
+* tenant route reads and writes now use `getSupabaseUser(authToken)` instead of `getSupabaseAdmin()`
+* tenant access middleware now checks membership through the caller token, not the service role
+* tenant create, invitation create, update, and archive now go through authenticated RPCs that derive the actor from `auth.uid()`
+* `POST /auth/register` now uses anon `signUp` instead of auth admin user creation
+* user profile upsert now runs through a user-scoped client, not the service role
+* `apps/api/src/lib/supabase.ts` no longer exports `getSupabaseAdmin`
+* API integration tests were updated to the user-scoped client model
+* `0007_user_scoped_tenant_rpcs.sql` was added and refined to avoid duplicate-policy failure on fresh migration runs
+
+Current result:
+
+* all current API routes are now backed by RLS or authenticated RPC paths
+* `rg -n "getSupabaseAdmin" apps/api/src apps/api/tests` returns no matches
+* API route integration tests and `apps/api` typecheck pass
+
+## What we need to do next
+
+1. Add a forward-only migration to clean up legacy tenant RPC signatures and explicitly revoke old execute grants where they are no longer canonical.
+2. Review the old duplicated migration history across `0003`, `0006`, and `0007` and document which functions/policies are canonical so future work does not reintroduce drift.
+3. Implement the remaining event route gaps, especially `GET /tenants/:tenantId/events/:eventId`, using the same user-scoped RLS pattern.
+4. Revisit runtime validation cleanup so event query validation is fully shared instead of partially local in controllers.
+5. Keep updating `diary.md` after each iteration with what changed, what was verified, and the next concrete step.

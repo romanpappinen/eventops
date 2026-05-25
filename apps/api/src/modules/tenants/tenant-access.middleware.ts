@@ -1,5 +1,5 @@
 import type { NextFunction, Response } from 'express';
-import { getSupabaseAdmin } from '../../lib/supabase.js';
+import { getSupabaseUser } from '../../lib/supabase.js';
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
 
 const roleRanks = {
@@ -43,17 +43,18 @@ export function requireTenantAccess(options: RequireTenantAccessOptions = {}) {
     ) {
         const tenantId = typeof req.params.tenantId === 'string' ? req.params.tenantId : '';
         const userId = req.authUser?.id;
+        const authToken = req.authToken;
 
         if (!tenantId) {
             return res.status(400).json({ error: 'Invalid tenant id' });
         }
 
-        if (!userId) {
+        if (!userId || !authToken) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const supabaseAdmin = getSupabaseAdmin();
-        const { data, error } = await supabaseAdmin
+        const supabaseUser = getSupabaseUser(authToken);
+        const { data, error } = await supabaseUser
             .from('memberships')
             .select('id, tenant_id, role, status')
             .eq('tenant_id', tenantId)

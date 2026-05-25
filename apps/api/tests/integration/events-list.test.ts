@@ -18,7 +18,6 @@ vi.mock('../../src/lib/supabase.js', () => ({
     getSupabaseUser: () => ({
         from: userFrom,
     }),
-    getSupabaseAdmin: vi.fn(),
 }));
 
 afterEach(() => {

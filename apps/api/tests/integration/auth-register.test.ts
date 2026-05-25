@@ -8,12 +8,9 @@ const { signUp, ensureUserProfile } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/lib/supabase.js', () => ({
-    getSupabaseAuth: vi.fn(),
-    getSupabaseAdmin: () => ({
+    getSupabaseAuth: () => ({
         auth: {
-            admin: {
-                createUser: signUp,
-            },
+            signUp,
         },
     }),
 }));
@@ -71,7 +68,58 @@ describe('POST /auth/register', () => {
         expect(ensureUserProfile).not.toHaveBeenCalled();
     });
 
-    it('creates the auth user and persists the app profile', async () => {
+    it('creates the auth user and persists the app profile when signup returns a session', async () => {
+        signUp.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'ada@example.com',
+                },
+                session: {
+                    access_token: 'session-token',
+                },
+            },
+            error: null,
+        });
+
+        const app = createApp();
+
+        const response = await request(app).post('/auth/register').send({
+            firstName: 'Ada',
+            lastName: 'Lovelace',
+            email: 'Ada@example.com',
+            password: 'secret123',
+        });
+
+        expect(signUp).toHaveBeenCalledWith({
+            email: 'ada@example.com',
+            password: 'secret123',
+            options: {
+                data: {
+                    full_name: 'Ada Lovelace',
+                },
+            },
+        });
+        expect(ensureUserProfile).toHaveBeenCalledWith('session-token', {
+            id: 'user-123',
+            email: 'ada@example.com',
+            fullName: 'Ada Lovelace',
+            avatarUrl: null,
+        });
+        expect(response.status).toBe(201);
+        expect(response.body).toEqual({
+            item: {
+                id: 'user-123',
+                email: 'ada@example.com',
+                fullName: 'Ada Lovelace',
+                avatarUrl: null,
+            },
+            requiresEmailConfirmation: false,
+            message: 'Registration succeeded. Sign in with your new account.',
+        });
+    });
+
+    it('returns email confirmation required when signup does not return a session', async () => {
         signUp.mockResolvedValue({
             data: {
                 user: {
@@ -92,20 +140,7 @@ describe('POST /auth/register', () => {
             password: 'secret123',
         });
 
-        expect(signUp).toHaveBeenCalledWith({
-            email: 'ada@example.com',
-            password: 'secret123',
-            email_confirm: true,
-            user_metadata: {
-                full_name: 'Ada Lovelace',
-            },
-        });
-        expect(ensureUserProfile).toHaveBeenCalledWith({
-            id: 'user-123',
-            email: 'ada@example.com',
-            fullName: 'Ada Lovelace',
-            avatarUrl: null,
-        });
+        expect(ensureUserProfile).not.toHaveBeenCalled();
         expect(response.status).toBe(201);
         expect(response.body).toEqual({
             item: {
@@ -114,8 +149,8 @@ describe('POST /auth/register', () => {
                 fullName: 'Ada Lovelace',
                 avatarUrl: null,
             },
-            requiresEmailConfirmation: false,
-            message: 'Registration succeeded. Sign in with your new account.',
+            requiresEmailConfirmation: true,
+            message: 'Registration succeeded. Check your email to confirm your account.',
         });
     });
 
@@ -152,7 +187,9 @@ describe('POST /auth/register', () => {
                     id: 'user-123',
                     email: 'ada@example.com',
                 },
-                session: null,
+                session: {
+                    access_token: 'session-token',
+                },
             },
             error: null,
         });

@@ -24,6 +24,15 @@ export interface TenantInvitation {
   invitedByUserId: string
 }
 
+export interface InvitationAcceptDetails {
+  invitationId: string
+  tenantId: string
+  tenantName: string
+  role: 'admin' | 'member'
+  status: 'pending' | 'accepted' | 'revoked' | 'expired' | 'archived'
+  expiresAt: string | null
+}
+
 interface AuthMeResponse {
   item: AuthMeUser
 }
@@ -70,6 +79,28 @@ interface TenantInvitationResponse {
     role: 'admin' | 'member'
     status: 'pending' | 'accepted' | 'revoked' | 'expired'
     invited_by_user_id: string
+  }
+}
+
+interface InvitationAcceptDetailsResponse {
+  item: {
+    invitationId: string
+    tenantId: string
+    tenantName: string
+    role: 'admin' | 'member'
+    status: 'pending' | 'accepted' | 'revoked' | 'expired' | 'archived'
+    expiresAt: string | null
+  }
+}
+
+interface MembershipAcceptResponse {
+  item: {
+    id: string
+    tenant_id: string
+    user_id: string
+    role: string
+    status: string
+    created_at?: string
   }
 }
 
@@ -210,4 +241,37 @@ export async function inviteTenantMember(
     status: body.item.status,
     invitedByUserId: body.item.invited_by_user_id,
   } satisfies TenantInvitation
+}
+
+export async function getInvitationAcceptDetails(accessToken: string, token: string) {
+  const response = await fetch(
+    `${getApiBaseUrl()}/invitations/accept?token=${encodeURIComponent(token)}`,
+    {
+      headers: createAuthHeaders(accessToken),
+    },
+  )
+
+  const body = await parseJson<Partial<InvitationAcceptDetailsResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to load invitation')
+  }
+
+  return body.item satisfies InvitationAcceptDetails
+}
+
+export async function acceptInvitation(accessToken: string, token: string) {
+  const response = await fetch(`${getApiBaseUrl()}/invitations/accept`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken, true),
+    body: JSON.stringify({ token }),
+  })
+
+  const body = await parseJson<Partial<MembershipAcceptResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to accept invitation')
+  }
+
+  return body.item
 }

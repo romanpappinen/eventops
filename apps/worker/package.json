@@ -15,6 +15,7 @@
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
+    "@eventops/tsconfig": "workspace:*",
     "@types/node": "^22.7.4",
     "tsx": "^4.19.1"
   }

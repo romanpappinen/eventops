@@ -14,7 +14,6 @@ vi.mock('../../src/lib/supabase.js', () => ({
             getUser,
         },
     }),
-    getSupabaseAdmin: vi.fn(),
 }));
 
 vi.mock('../../src/modules/tenants/tenant.service.js', async () => {

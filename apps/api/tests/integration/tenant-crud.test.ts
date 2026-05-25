@@ -15,7 +15,7 @@ vi.mock('../../src/lib/supabase.js', () => ({
             getUser,
         },
     }),
-    getSupabaseAdmin: () => ({
+    getSupabaseUser: () => ({
         rpc,
         from,
     }),
@@ -190,7 +190,7 @@ describe('tenant CRUD routes', () => {
                 })),
             })),
         }));
-        const singleTenant = vi.fn().mockResolvedValue({
+        rpc.mockResolvedValue({
             data: {
                 id: '550e8400-e29b-41d4-a716-446655440000',
                 name: 'Renamed Tenant',
@@ -204,21 +204,13 @@ describe('tenant CRUD routes', () => {
             },
             error: null,
         });
-        const selectUpdated = vi.fn(() => ({ single: singleTenant }));
-        const eqOwner = vi.fn(() => ({ select: selectUpdated }));
-        const eqTenantId = vi.fn(() => ({ eq: eqOwner }));
-        const update = vi.fn(() => ({ eq: eqTenantId }));
 
         from.mockImplementation((table: string) => {
             if (table === 'memberships') {
                 return { select: selectMembership };
             }
 
-            if (table === 'tenants') {
-                return { update };
-            }
-
-            return { select: vi.fn(), update: vi.fn() };
+            return { select: vi.fn() };
         });
 
         const app = createApp();
@@ -237,6 +229,13 @@ describe('tenant CRUD routes', () => {
             name: 'Renamed Tenant',
             description: 'Updated description',
             slug: 'renamed-tenant',
+        });
+        expect(rpc).toHaveBeenCalledWith('update_tenant', {
+            p_tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+            p_name: 'Renamed Tenant',
+            p_slug: 'renamed-tenant',
+            p_description: 'Updated description',
+            p_description_provided: true,
         });
     });
 
@@ -270,7 +269,7 @@ describe('tenant CRUD routes', () => {
                 })),
             })),
         }));
-        const singleTenant = vi.fn().mockResolvedValue({
+        rpc.mockResolvedValue({
             data: {
                 id: '550e8400-e29b-41d4-a716-446655440000',
                 name: 'Acme Ops',
@@ -284,21 +283,13 @@ describe('tenant CRUD routes', () => {
             },
             error: null,
         });
-        const selectUpdated = vi.fn(() => ({ single: singleTenant }));
-        const eqOwner = vi.fn(() => ({ select: selectUpdated }));
-        const eqTenantId = vi.fn(() => ({ eq: eqOwner }));
-        const update = vi.fn(() => ({ eq: eqTenantId }));
 
         from.mockImplementation((table: string) => {
             if (table === 'memberships') {
                 return { select: selectMembership };
             }
 
-            if (table === 'tenants') {
-                return { update };
-            }
-
-            return { select: vi.fn(), update: vi.fn() };
+            return { select: vi.fn() };
         });
 
         const app = createApp();
@@ -309,5 +300,8 @@ describe('tenant CRUD routes', () => {
 
         expect(response.status).toBe(200);
         expect(response.body.item.status).toBe('archived');
+        expect(rpc).toHaveBeenCalledWith('archive_tenant', {
+            p_tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        });
     });
 });

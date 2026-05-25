@@ -18,12 +18,24 @@ vi.mock('../../src/lib/supabase.js', () => ({
     getSupabaseUser: () => ({
         from: userFrom,
     }),
-    getSupabaseAdmin: vi.fn(),
 }));
 
 afterEach(() => {
     vi.clearAllMocks();
 });
+
+function mockTenantStatus(status: 'active' | 'archived' = 'active') {
+    const maybeSingle = vi.fn().mockResolvedValue({
+        data: {
+            status,
+        },
+        error: null,
+    });
+    const eq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ eq }));
+
+    return { select };
+}
 
 describe('POST /tenants/:tenantId/events', () => {
     it('returns 401 when no bearer token is provided', async () => {
@@ -129,6 +141,10 @@ describe('POST /tenants/:tenantId/events', () => {
         const insert = vi.fn(() => ({ select }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'tenants') {
+                return mockTenantStatus();
+            }
+
             if (table === 'events') {
                 return { insert };
             }
@@ -194,6 +210,10 @@ describe('POST /tenants/:tenantId/events', () => {
         const insert = vi.fn(() => ({ select }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'tenants') {
+                return mockTenantStatus();
+            }
+
             if (table === 'events') {
                 return { insert };
             }
@@ -254,6 +274,50 @@ describe('POST /tenants/:tenantId/events', () => {
         });
     });
 
+    it('returns 409 when the tenant is archived', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'member@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'tenants') {
+                return mockTenantStatus('archived');
+            }
+
+            if (table === 'events') {
+                return { insert: vi.fn() };
+            }
+
+            return { insert: vi.fn(), select: vi.fn() };
+        });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({
+                source: 'web-app',
+                type: 'order_created',
+                occurredAt: '2026-05-18T12:00:00.000Z',
+                payload: {
+                    orderId: '123',
+                },
+            });
+
+        expect(response.status).toBe(409);
+        expect(response.body).toEqual({
+            error: 'Tenant is archived',
+        });
+    });
+
     it('returns 502 when the event insert fails', async () => {
         getUser.mockResolvedValue({
             data: {
@@ -276,6 +340,10 @@ describe('POST /tenants/:tenantId/events', () => {
         const insert = vi.fn(() => ({ select }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'tenants') {
+                return mockTenantStatus();
+            }
+
             if (table === 'events') {
                 return { insert };
             }

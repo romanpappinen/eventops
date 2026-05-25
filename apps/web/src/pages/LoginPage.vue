@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { routeNames } from '../core/navigation/routes'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 
 const email = ref('')
@@ -19,7 +20,18 @@ async function onSubmit() {
   password.value = ''
 
   if (success) {
-    await router.push({ name: routeNames.home })
+    const invitationToken = sessionStorage.getItem('invitation_accept_token')
+    const redirect =
+      typeof route.query.redirect === 'string' && route.query.redirect.length > 0
+        ? route.query.redirect
+        : null
+
+    if (invitationToken) {
+      await router.push({ name: routeNames.invitationAccept })
+      return
+    }
+
+    await router.push(redirect ?? { name: routeNames.home })
   }
 }
 </script>
@@ -74,7 +86,17 @@ async function onSubmit() {
 
       <p class="footnote">
         Need an account?
-        <RouterLink :to="{ name: routeNames.register }">Register</RouterLink>
+        <RouterLink
+          :to="{
+            name: routeNames.register,
+            query:
+              typeof route.query.redirect === 'string'
+                ? { redirect: route.query.redirect }
+                : {},
+          }"
+        >
+          Register
+        </RouterLink>
       </p>
     </section>
   </main>

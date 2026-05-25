@@ -10,7 +10,6 @@ vi.mock('../../src/lib/supabase.js', () => ({
             getUser,
         },
     }),
-    getSupabaseAdmin: vi.fn(),
 }));
 
 afterEach(() => {

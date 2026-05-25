@@ -1,5 +1,5 @@
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
-import { getSupabaseAdmin } from '../../lib/supabase.js';
+import { getSupabaseAuth } from '../../lib/supabase.js';
 import { ApiError } from '../../lib/api-error.js';
 import type { RegisterInput } from './auth.schemas.js';
 import { ensureUserProfile } from './ensure-user-profile.js';
@@ -25,15 +25,16 @@ interface RegisterUserResult {
 }
 
 export async function registerUser(input: RegisterInput): Promise<RegisterUserResult> {
-    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAuth = getSupabaseAuth();
     const fullName = `${input.firstName} ${input.lastName}`.trim();
 
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    const { data, error } = await supabaseAuth.auth.signUp({
         email: input.email,
         password: input.password,
-        email_confirm: true,
-        user_metadata: {
-            full_name: fullName,
+        options: {
+            data: {
+                full_name: fullName,
+            },
         },
     });
 
@@ -62,15 +63,17 @@ export async function registerUser(input: RegisterInput): Promise<RegisterUserRe
         throw new ApiError(500, 'Registration did not return a user');
     }
 
-    try {
-        await ensureUserProfile({
-            id: authUser.id,
-            email: authUser.email ?? input.email,
-            fullName,
-            avatarUrl: null,
-        });
-    } catch {
-        throw new ApiError(500, 'Registration failed while creating the user profile');
+    if (data.session?.access_token) {
+        try {
+            await ensureUserProfile(data.session.access_token, {
+                id: authUser.id,
+                email: authUser.email ?? input.email,
+                fullName,
+                avatarUrl: null,
+            });
+        } catch {
+            throw new ApiError(500, 'Registration failed while creating the user profile');
+        }
     }
 
     return {
@@ -80,7 +83,9 @@ export async function registerUser(input: RegisterInput): Promise<RegisterUserRe
             fullName,
             avatarUrl: null,
         },
-        requiresEmailConfirmation: false,
-        message: 'Registration succeeded. Sign in with your new account.',
+        requiresEmailConfirmation: !data.session,
+        message: data.session
+            ? 'Registration succeeded. Sign in with your new account.'
+            : 'Registration succeeded. Check your email to confirm your account.',
     };
 }

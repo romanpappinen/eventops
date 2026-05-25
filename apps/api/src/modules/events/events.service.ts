@@ -34,6 +34,24 @@ export async function createEventForTenant(
     input: CreateEventDto
 ) {
     const supabaseUser = getSupabaseUser(authToken);
+    const { data: tenant, error: tenantError } = await supabaseUser
+        .from('tenants')
+        .select('status')
+        .eq('id', tenantId)
+        .maybeSingle();
+
+    if (tenantError) {
+        throw new ApiError(502, 'Failed to load tenant');
+    }
+
+    if (!tenant) {
+        throw new ApiError(404, 'Tenant not found');
+    }
+
+    if (tenant.status !== 'active') {
+        throw new ApiError(409, 'Tenant is archived');
+    }
+
     const { data, error } = await supabaseUser
         .from('events')
         .insert({

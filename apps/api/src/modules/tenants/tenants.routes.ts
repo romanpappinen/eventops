@@ -7,13 +7,16 @@ import {
     createTenant,
     createTenantInvitation,
     getTenant,
+    listTenantInvitations,
     listTenants,
+    revokeTenantInvitation,
     updateTenant,
 } from './tenants.controller.js';
 import { requireTenantAccess } from './tenant-access.middleware.js';
 import {
     createTenantSchema,
     inviteTenantMemberSchema,
+    tenantInvitationRouteParamsSchema,
     tenantParamsSchema,
     updateTenantSchema,
 } from './tenant.schemas.js';
@@ -51,4 +54,18 @@ tenantsRouter.post(
     requireTenantAccess({ minimumRole: 'owner' }),
     validate(inviteTenantMemberSchema, 'body'),
     asyncHandler(createTenantInvitation)
+);
+tenantsRouter.get(
+    '/:tenantId/invitations',
+    requireAuth,
+    validate(tenantParamsSchema, 'params'),
+    requireTenantAccess({ minimumRole: 'owner' }),
+    asyncHandler(listTenantInvitations)
+);
+tenantsRouter.delete(
+    '/:tenantId/invitations/:invitationId',
+    requireAuth,
+    validate(tenantInvitationRouteParamsSchema, 'params'),
+    requireTenantAccess({ minimumRole: 'owner' }),
+    asyncHandler(revokeTenantInvitation)
 );

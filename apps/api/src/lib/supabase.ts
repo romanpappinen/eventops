@@ -17,12 +17,6 @@ function createSupabaseClient(apiKey: string, accessToken?: string) {
   });
 }
 
-export function getSupabaseAdmin() {
-  const env = parseApiEnv(process.env);
-
-  return createSupabaseClient(env.SUPABASE_SERVICE_ROLE_KEY);
-}
-
 export function getSupabaseAuth() {
   const env = parseApiEnv(process.env);
 
@@ -33,4 +27,10 @@ export function getSupabaseUser(accessToken: string) {
   const env = parseApiEnv(process.env);
 
   return createSupabaseClient(env.SUPABASE_ANON_KEY, accessToken);
+}
+
+export function getSupabaseAdmin() {
+  const env = parseApiEnv(process.env);
+
+  return createSupabaseClient(env.SUPABASE_SERVICE_ROLE_KEY);
 }
