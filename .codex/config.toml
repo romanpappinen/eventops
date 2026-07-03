@@ -1,20 +1,39 @@
-approval_policy = "on-request"
-sandbox_mode = "danger-full-access"
+# eventops :: Codex CLI project config
+# Threat model note:
+#   Codex enforces workspace-write via bubblewrap (Linux user namespaces).
+#   Inside a nested container (devcontainer running inside Docker via
+#   JetBrains Gateway) the host may NOT grant those namespaces, in which
+#   case the internal sandbox silently fails to apply.
+#
+#   Verify once per host, from inside the running devcontainer:
+#     bwrap --dev-bind / / true
+#   - exits 0            -> internal sandbox is real, config below is enforced.
+#   - fails/permission err -> internal sandbox is NOT enforced; the container
+#     boundary itself (non-root user, --network, --cap-drop in devcontainer.json)
+#     is your real security boundary. In that case do not raise approval_policy
+#     to "never" for this project under any circumstance.
+
+approval_policy = "on-request"     # never auto-run; a human must approve each action
+approvals_reviewer = "user"        # explicitly disable auto_review for this project
+sandbox_mode = "workspace-write"   # never "danger-full-access" here
 allow_login_shell = false
 web_search = "disabled"
 cli_auth_credentials_store = "file"
 
 [sandbox_workspace_write]
-network_access = false
+network_access = false             # no outbound network for anything Codex runs
 exclude_tmpdir_env_var = false
 exclude_slash_tmp = false
 blocked_paths = [
   ".env",
   ".env.local",
   ".env.*",
+  ".npmrc",
   "supabase/.temp",
   "supabase/.branches"
 ]
+# Codex is only ever allowed to write inside the workspace folder itself.
+# Do not add writable_roots pointing outside /workspaces/eventops.
 
 [shell_environment_policy]
 inherit = "core"
@@ -49,3 +68,19 @@ exclude = [
   "SSH_*"
 ]
 set = { NODE_ENV = "development" }
+
+# ---------------------------------------------------------------------------
+# Profiles: named, explicit-only configurations. None of these activate by
+# themselves — you must pass --profile <name>. This keeps the base config
+# (used by default, including from a phone/remote session) as the strict one.
+# ---------------------------------------------------------------------------
+
+[profiles.readonly]
+# For exploration / code review sessions where you want zero write risk.
+approval_policy = "on-request"
+approvals_reviewer = "user"
+sandbox_mode = "read-only"
+
+# Deliberately no [profiles.deploy], no [profiles.ci] with approval_policy =
+# "never", and no danger-full-access profile in this file. Deploy is handled
+# outside Codex entirely — see REMOTE-ACCESS.md.
