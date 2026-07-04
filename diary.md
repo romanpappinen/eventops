@@ -1,5 +1,26 @@
 # Diary
 
+Date: 2026-07-04
+
+## What changed
+
+Following a security/CRUD/middleware review of `apps/api`, implemented two stability hardening items:
+
+1. **Application-layer tenant-membership check on events routes.** `GET/POST /tenants/:tenantId/events` previously ran only `requireAuth`, relying entirely on Postgres RLS for tenant isolation — the only tenant-scoped module without a second application-level barrier. Added `requireTenantAccess()` (`apps/api/src/modules/tenants/tenant-access.middleware.js`, already used by `tenants.routes.ts`) to both routes in `events.routes.ts`. Non-members/nonexistent tenants now get `404 { error: 'Tenant not found' }` from the middleware, consistent with how `tenants.routes.ts` already behaves (previously GET silently returned `200 { items: [] }` and POST relied on a `42501` RLS error at insert time).
+2. **Rate limiting on abuse-prone endpoints.** Added `express-rate-limit` and a small `createRateLimiter()` wrapper (`apps/api/src/middleware/rate-limit.js`) returning the existing `{ error: string }` JSON error shape on `429`. Applied via path-scoped `app.use()` inside `createApp()` (fresh limiter instance per call, so each test/process gets an isolated counter — no shared module-level state) to `POST /auth/register` (20 req / 15 min per IP — registration abuse / email-enumeration probing) and `GET+POST /invitations/accept` (30 req / 15 min per IP — invitation-token probing/abuse).
+
+## What was verified
+
+* `pnpm --filter @eventops/api typecheck` — passes.
+* `pnpm --filter @eventops/api test` — 61/62 passing. Updated `events-list.test.ts` and `events-create.test.ts` to mock the new `memberships` lookup and added 404/defense-in-depth cases; added `tests/unit/rate-limit.test.ts` (max-then-429 behavior) and header-presence checks in `auth-register.test.ts` / `invitations-accept.test.ts`.
+* The one remaining failure (`invitations-accept.test.ts > returns invitation details for a valid token`) is pre-existing and unrelated: the test hardcodes `accept_token_expires_at: '2026-06-01T00:00:00.000Z'`, which is now in the past relative to the current date, so the invitation reads as `expired` instead of `pending`. Not touched by this change — needs a follow-up fix (use a relative/future date instead of a fixed one).
+
+## Next concrete step
+
+Fix the time-bombed fixed date in `invitations-accept.test.ts` (`returns invitation details for a valid token`), then continue with the previously planned invitation resend + cleanup work.
+
+---
+
 Date: 2026-05-19
 
 ## What I checked
