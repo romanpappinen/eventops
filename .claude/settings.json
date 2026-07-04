@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "default",
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./.npmrc)",
+      "Read(./supabase/.temp/**)",
+      "Read(./supabase/.branches/**)",
+      "Bash(rm -rf*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)"
+    ]
+  }
+}
