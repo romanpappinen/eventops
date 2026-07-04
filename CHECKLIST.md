@@ -1,0 +1,42 @@
+# Next Steps Checklist
+
+Working sequentially — check items off as they're done. Source: `diary.md`
+history + README "Development Roadmap" + the 2026-07-04 API review.
+
+## Stability hardening (done 2026-07-04)
+
+- [x] Add `requireTenantAccess()` application-layer check to events routes
+- [x] Add rate limiting to `POST /auth/register` and `/invitations/accept`
+
+## Test hygiene
+
+- [ ] Fix time-bombed fixed date in `invitations-accept.test.ts` ("returns
+      invitation details for a valid token") — `accept_token_expires_at` is
+      hardcoded to `2026-06-01`, now in the past; use a relative/future date
+
+## Invitation resend + cleanup
+
+- [ ] Owner-only resend invitation endpoint (fresh accept token, reset
+      expiry, requeue email job)
+- [ ] Cleanup path for expired invitations and permanently-failed email jobs
+- [ ] Extend invitation list API responses + tenant settings UI with
+      resend/error visibility
+- [ ] Worker tests for retry exhaustion and token regeneration behavior
+
+## Event route gaps
+
+- [ ] Implement `GET /tenants/:tenantId/events/:eventId`
+- [ ] Wire the shared `listEventsQueryDtoSchema`
+      (`packages/validation/src/request/events.ts`) through the `validate()`
+      middleware instead of the local duplicate schema in
+      `events.controller.ts`
+
+## Later / lower priority
+
+- [ ] Frontend invitation expiry/resend admin controls
+- [ ] Periodic cleanup/maintenance worker for expired invitations and stale
+      queue rows
+- [ ] Consider moving worker-only delivery state (`invitation_email_jobs`)
+      into a dedicated private schema for stricter isolation
+- [ ] Document canonical tenant RPC functions across migration history
+      (`0003`/`0006`/`0007`/`0009`) so future work doesn't reintroduce drift
