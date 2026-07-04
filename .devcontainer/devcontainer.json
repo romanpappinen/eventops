@@ -18,13 +18,12 @@
       }
     }
   },
-  "mounts": [
-    "source=eventops-codex-home,target=/home/node/.codex,type=volume"
-  ],
-  "postCreateCommand": "pnpm install && mkdir -p /home/node/.codex && cp -f /workspaces/eventops/.codex/config.toml /home/node/.codex/config.toml",
+  "postCreateCommand": "pnpm install",
   "runArgs": [
     "--network=eventops-restricted",
     "--cap-drop=ALL",
+    "--cap-add=CHOWN",
+    "--cap-add=FOWNER",
     "--security-opt=no-new-privileges:true"
   ],
   "containerEnv": {

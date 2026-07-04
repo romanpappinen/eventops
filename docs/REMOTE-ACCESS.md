@@ -1,68 +1,60 @@
-# Remote / mobile access to Codex — safe setup
+# Remote / mobile access to Claude Code — safe setup
 
-Goal: trigger and review Codex work from a phone, without exposing the dev
-container to the public internet and without giving it deploy access.
+Goal: trigger and review Claude Code work from a phone, without exposing
+the dev container to the public internet and without giving up local
+tooling (tests, Supabase, etc.).
 
-## Two different needs — do not conflate them
+## Primary option — Claude Code Remote Control
 
-1. "I want to ask Codex to do something from my phone."
-2. "I want it to touch *this exact running container* on my machine."
+Claude Code has a built-in Remote Control feature: your phone becomes a
+window into a session already running inside this devcontainer.
 
-These need different, non-overlapping solutions. Picking the wrong one is
-how people end up with an SSH port open to the internet.
+- Outbound-only: the local Claude Code process makes HTTPS requests to
+  Anthropic's API and holds a connection open. No inbound port on your
+  machine, no firewall rule, no SSH key.
+- Full local context: filesystem, tests, Supabase, everything already set
+  up in this container is available exactly as if you were typing locally.
+- Permission model unchanged: default mode still asks before every
+  mutating action (write, bash, network) — being remote doesn't loosen this.
 
-## Option A — Codex Cloud tasks (recommended default)
+Setup, each time you want to use it:
+1. In the devcontainer terminal: `claude`
+2. First run: `/login` (once), accept the folder-trust prompt (once).
+3. Inside a session: `/rc` — this prints a QR code.
+4. Scan it with the Claude app on your phone.
 
-OpenAI runs Codex tasks in isolated, OpenAI-managed cloud containers,
-reachable from the ChatGPT/Codex mobile app. This never touches your laptop
-or your local devcontainer:
+Requirements:
+- Claude Pro, Max, Team, or Enterprise subscription (not available via bare
+  API key).
+- Your computer must stay on and the container running for the session to
+  stay alive — this is a live bridge to your local machine, not a cloud
+  sandbox.
 
-- Your local machine and its network stay completely closed — nothing to
-  expose, nothing to forget to close later.
-- Cloud tasks run in two phases: a setup phase that can reach the network to
-  install dependencies, then an offline agent phase by default. Any secrets
-  you configure for the cloud environment exist only during setup and are
-  removed before the agent phase starts — so even a compromised task can't
-  exfiltrate them later in the run.
-- Output is a normal git diff/PR against your repo, exactly like a local
-  session. You pull and review it the same way.
+## Fallback option — Tailscale + SSH into the container
 
-Use this for "let me kick off a refactor/bugfix from my phone while I'm out."
-It cannot deploy anything by itself — see the deploy section below.
+Only needed if you want a full raw terminal from your phone (not just
+Claude Code's chat interface) — e.g. to run arbitrary shell commands,
+tail logs, or use tools Claude Code doesn't expose directly.
 
-## Option B — Tailscale + SSH into the real local container
+1. Tailscale on the host (already set up: `RomanPC` in your tailnet).
+2. Tailscale on the phone (already set up).
+3. OpenSSH Server on the host, restricted to the Tailscale range
+   (`100.64.0.0/10`) at the firewall level — not the public internet.
+4. A dedicated, non-admin Windows user with a `ForceCommand` that drops
+   straight into `docker exec -it <container> bash` on login — so an SSH
+   session never reaches a raw Windows shell, only the container.
 
-Only if you specifically need to control the exact container running on
-your machine right now (e.g. to inspect local Supabase state):
+This path is more setup and more moving parts than Remote Control. Use it
+only if you specifically need a full terminal, not just Claude Code.
 
-1. Install Tailscale on the **host** machine (not inside the devcontainer).
-   This puts the host on a private WireGuard-based mesh network — no public
-   IP, no open port, access requires the device to be authenticated into
-   your Tailscale account.
-2. From the host, `ssh` into the container the normal Docker way, or expose
-   only the container's SSH/terminal over the Tailscale interface — never
-   over `0.0.0.0` on the host's public interface.
-3. On the phone: Tailscale app (to join the mesh) + an SSH client (e.g.
-   Termius) with a key-only login. Disable password auth entirely.
-4. Once connected, you're just running `codex` in a normal terminal session
-   inside the container — `config.toml` and `AGENTS.md` from this repo apply
-   exactly as they do locally. Nothing about being remote loosens the rules.
+## Deploy from a phone: don't give Claude the keys
 
-Never use `ngrok`, a public port-forward, or `--network=host` to make this
-reachable — that's the setup that gets scanned and hit by bots within
-minutes.
-
-## Deploy from a phone: don't give Codex the keys
-
-Regardless of Option A or B, Codex itself should never hold deploy
-credentials or run deploy commands — this is enforced in `AGENTS.md`. The
+Claude Code — local or via Remote Control — should never hold deploy
+credentials or run deploy commands. This is enforced in `CLAUDE.md`. The
 safe flow for "deploy from my phone":
 
-1. Codex (cloud or local) makes the change and opens a PR.
-2. You approve the PR from the phone (GitHub/GitLab mobile app — this is a
-   read/approve action, not a credentialed shell).
-3. CI (GitHub Actions or similar) does the actual build + deploy, gated by a
-   required manual approval/environment protection rule.
-
-This way "deploy from the phone" really means "tap approve on a PR and on a
-CI gate," not "give an SSH-reachable agent your production credentials."
+1. Claude Code makes the change and opens a PR.
+2. You approve the PR from the phone (GitHub mobile app — a read/approve
+   action, not a credentialed shell).
+3. CI (GitHub Actions or similar) does the actual build + deploy, gated by
+   a required manual approval / environment protection rule.
