@@ -37,6 +37,27 @@ function mockTenantStatus(status: 'active' | 'archived' = 'active') {
     return { select };
 }
 
+function mockMembership(options?: { role?: string; status?: string } | null) {
+    const maybeSingle = vi.fn().mockResolvedValue({
+        data:
+            options === null
+                ? null
+                : {
+                      id: 'membership-123',
+                      tenant_id: tenantId,
+                      role: options?.role ?? 'member',
+                      status: options?.status ?? 'active',
+                  },
+        error: null,
+    });
+    const eqStatus = vi.fn(() => ({ maybeSingle }));
+    const eqUser = vi.fn(() => ({ eq: eqStatus }));
+    const eqTenant = vi.fn(() => ({ eq: eqUser }));
+    const select = vi.fn(() => ({ eq: eqTenant }));
+
+    return { select };
+}
+
 describe('POST /tenants/:tenantId/events', () => {
     it('returns 401 when no bearer token is provided', async () => {
         const app = createApp();
@@ -100,6 +121,14 @@ describe('POST /tenants/:tenantId/events', () => {
             error: null,
         });
 
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
+            return { insert: vi.fn(), select: vi.fn() };
+        });
+
         const app = createApp();
 
         const response = await request(app)
@@ -130,6 +159,46 @@ describe('POST /tenants/:tenantId/events', () => {
             error: null,
         });
 
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership(null);
+            }
+
+            return { insert: vi.fn(), select: vi.fn() };
+        });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({
+                source: 'web-app',
+                type: 'order_created',
+                occurredAt: '2026-05-18T12:00:00.000Z',
+                payload: {
+                    orderId: '123',
+                },
+            });
+
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({
+            error: 'Tenant not found',
+        });
+    });
+
+    it('returns 404 when the RLS insert policy rejects an active member (defense in depth)', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'member@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+
         const single = vi.fn().mockResolvedValue({
             data: null,
             error: {
@@ -141,6 +210,10 @@ describe('POST /tenants/:tenantId/events', () => {
         const insert = vi.fn(() => ({ select }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus();
             }
@@ -210,6 +283,10 @@ describe('POST /tenants/:tenantId/events', () => {
         const insert = vi.fn(() => ({ select }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus();
             }
@@ -287,6 +364,10 @@ describe('POST /tenants/:tenantId/events', () => {
         });
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus('archived');
             }
@@ -340,6 +421,10 @@ describe('POST /tenants/:tenantId/events', () => {
         const insert = vi.fn(() => ({ select }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus();
             }
