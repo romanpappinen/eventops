@@ -86,6 +86,14 @@ function mockInvitationLookup(options?: {
 }
 
 describe('GET /invitations/accept', () => {
+    it('sets rate limit headers on the response', async () => {
+        const app = createApp();
+
+        const response = await request(app).get('/invitations/accept');
+
+        expect(response.headers['ratelimit-limit']).toBe('30');
+    });
+
     it('returns 401 when no bearer token is provided', async () => {
         const app = createApp();
 

@@ -24,6 +24,29 @@ afterEach(() => {
 });
 
 describe('POST /auth/register', () => {
+    it('sets rate limit headers on the response', async () => {
+        signUp.mockResolvedValue({
+            data: {
+                user: null,
+                session: null,
+            },
+            error: {
+                message: 'User already registered',
+            },
+        });
+
+        const app = createApp();
+
+        const response = await request(app).post('/auth/register').send({
+            firstName: 'Ada',
+            lastName: 'Lovelace',
+            email: 'ada@example.com',
+            password: 'secret123',
+        });
+
+        expect(response.headers['ratelimit-limit']).toBe('20');
+    });
+
     it('returns 400 when the payload is invalid', async () => {
         const app = createApp();
 

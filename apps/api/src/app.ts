@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { getHealthMessage } from '@eventops/shared';
 import { errorHandler } from './middleware/error-handler.js';
+import { createRateLimiter } from './middleware/rate-limit.js';
 import { eventsRouter } from './modules/events/events.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { invitationsRouter } from './modules/invitations/invitations.routes.js';
@@ -19,6 +20,20 @@ export function createApp() {
             service: getHealthMessage()
         });
     });
+
+    const authRegisterLimiter = createRateLimiter({
+        windowMs: 15 * 60 * 1000,
+        max: 20,
+        message: 'Too many registration attempts. Try again later.',
+    });
+    const invitationAcceptLimiter = createRateLimiter({
+        windowMs: 15 * 60 * 1000,
+        max: 30,
+        message: 'Too many invitation requests. Try again later.',
+    });
+
+    app.use('/auth/register', authRegisterLimiter);
+    app.use('/invitations/accept', invitationAcceptLimiter);
 
     app.use('/auth', authRouter);
     app.use('/invitations', invitationsRouter);
