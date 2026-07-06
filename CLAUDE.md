@@ -63,6 +63,12 @@ After any non-trivial change, append a short entry to `diary.md`:
 - what was verified (tests/typecheck run and result)
 - the next concrete step
 
+After a step/task is completed successfully (checks above pass), commit the
+work to git as its own commit, with a message summarizing the work done
+(what changed and why). This applies to local changes only — it does not
+authorize pushing to a remote; pushes still require explicit user request per
+the deploy/production boundary above.
+
 ## Repo structure
 - apps/web
 - apps/api
