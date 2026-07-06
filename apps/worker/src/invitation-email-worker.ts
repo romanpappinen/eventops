@@ -10,7 +10,7 @@ import {
     updateTenantInvitation,
 } from './lib/supabase-rest.js';
 
-interface InvitationEmailJobRow {
+export interface InvitationEmailJobRow {
     id: string;
     invitation_id: string;
     attempts: number;
@@ -76,7 +76,7 @@ async function loadInvitationContext(invitationId: string) {
     };
 }
 
-async function markJobSuccess(job: InvitationEmailJobRow, messageId: string) {
+export async function markJobSuccess(job: InvitationEmailJobRow, messageId: string) {
     const now = new Date().toISOString();
     const nextAttempts = job.attempts + 1;
 
@@ -98,7 +98,7 @@ async function markJobSuccess(job: InvitationEmailJobRow, messageId: string) {
     });
 }
 
-async function markJobFailure(job: InvitationEmailJobRow, errorMessage: string) {
+export async function markJobFailure(job: InvitationEmailJobRow, errorMessage: string) {
     const env = parseWorkerEnv(process.env);
     const nextAttempts = job.attempts + 1;
     const terminal = nextAttempts >= env.INVITATION_EMAIL_MAX_ATTEMPTS;

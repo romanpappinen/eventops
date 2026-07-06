@@ -25,7 +25,10 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
       no 'expired' DB status needed, expiry already enforced at accept time)
 - [ ] Extend invitation list API responses + tenant settings UI with
       resend/error visibility
-- [ ] Worker tests for retry exhaustion and token regeneration behavior
+- [x] Worker tests for retry exhaustion and token regeneration behavior
+      (done 2026-07-06: token regeneration covered at the API layer by the
+      resend endpoint tests; retry exhaustion covered by
+      invitation-email-worker.test.ts)
 
 ## Event route gaps
 

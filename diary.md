@@ -1,5 +1,37 @@
 # Diary
 
+Date: 2026-07-06 (4)
+
+## What changed
+
+Step 3 (stretch) of the "Invitation resend + cleanup" checklist block:
+worker tests for retry exhaustion, on top of the Vitest setup added in step 2.
+
+* `apps/worker/src/invitation-email-worker.ts`: exported `markJobFailure`,
+  `markJobSuccess`, and `InvitationEmailJobRow` (previously module-private)
+  so they're directly testable without driving the infinite poll loop.
+* `apps/worker/tests/invitation-email-worker.test.ts` (new): covers
+  `markJobFailure`'s non-terminal branch (status stays `pending`, `attempts`
+  incremented, `accept_token` kept, `scheduled_at` pushed out) and terminal
+  branch (`attempts` hits `INVITATION_EMAIL_MAX_ATTEMPTS`, status becomes
+  `failed`, `accept_token` cleared), plus `markJobSuccess`.
+
+## What was verified
+
+* `pnpm --filter @eventops/worker test` — 6/6 passing.
+* `pnpm --filter @eventops/worker typecheck` — passes.
+
+## Next concrete step
+
+"Invitation resend + cleanup" checklist block is now fully closed (resend
+endpoint, cleanup sweep, worker tests). Remaining items are explicitly out of
+scope for this pass: extending the invitation list API + tenant settings UI
+with resend/error visibility, and the "later/lower priority" bullets
+(frontend controls, moving invitation_email_jobs to a private schema,
+documenting canonical tenant RPCs across migration history).
+
+---
+
 Date: 2026-07-06 (3)
 
 ## What changed
