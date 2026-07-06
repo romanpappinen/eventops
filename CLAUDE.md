@@ -1,7 +1,6 @@
 # CLAUDE.md
 
-This file mirrors `AGENTS.md` (used by Codex CLI in this repo). Keep both in
-sync — same rules, same reasoning, just read by a different tool.
+Project instructions for Claude Code in this repo.
 
 ## Scope
 Work only inside this repository (`/workspaces/eventops`).
