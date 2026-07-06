@@ -168,6 +168,7 @@ export async function deleteTerminalInvitationEmailJobsOlderThan(cutoffIso: stri
                 status: 'in.(sent,failed)',
                 processed_at: `lt.${cutoffIso}`,
             },
+            select: 'id',
             prefer: 'return=representation',
         })) ?? [];
 

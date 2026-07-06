@@ -1,5 +1,53 @@
 # Diary
 
+Date: 2026-07-06 (7)
+
+## What changed
+
+Applied the remaining `/code-review` findings from the previous entry
+(web-side and worker-side).
+
+* **Bug (confirmed)**: `apps/web/src/pages/TenantEditPage.vue`'s
+  `canActOnInvitation` never checked the parent tenant's archived status, so
+  Resend/Revoke buttons rendered for invitations under an archived tenant
+  even though the backend always rejects those with 409. Now returns
+  `false` up front when `tenant.value.status !== 'active'`.
+* **Bug (plausible)**: `apps/web/src/stores/tenants.ts`'s
+  `inviteTenantMember` unconditionally unshifted the new invitation into
+  `this.invitations`, even if the initial `fetchInvitations` had never
+  succeeded -- could show a misleadingly short list. Added an
+  `invitationsLoaded` flag (set on a successful `fetchInvitations`) and only
+  unshift when it's `true`.
+* **Simplification**: extracted a shared `upsertById(list, item)` helper in
+  `stores/tenants.ts`, replacing three copies of the same
+  find-index/splice-or-unshift pattern (`createTenant`, `resendInvitation`,
+  `revokeInvitation`).
+* **Efficiency**: `apps/worker/src/lib/supabase-rest.ts`'s
+  `deleteTerminalInvitationEmailJobsOlderThan` now passes `select: 'id'` on
+  the DELETE, so PostgREST's `return=representation` payload is just UUIDs
+  instead of full row data for every terminal job it prunes.
+
+This closes out all 9 findings from the code review.
+
+## What was verified
+
+* `pnpm --filter @eventops/web typecheck` and
+  `pnpm --filter @eventops/web test` — `tenants.store.test.ts` 5/5 passing.
+  (The pre-existing, unrelated `auth.store.test.ts` failure noted earlier
+  still fails the same way -- not touched, tracked separately in
+  CHECKLIST.md.)
+* `pnpm --filter @eventops/worker typecheck` and
+  `pnpm --filter @eventops/worker test` — 6/6 passing.
+
+## Next concrete step
+
+All checklist items from the "Invitation resend + cleanup" block and this
+review pass are done. Remaining open items: the pre-existing
+`auth.store.test.ts` failure, and the "Event route gaps" / "Later / lower
+priority" checklist sections.
+
+---
+
 Date: 2026-07-06 (6)
 
 ## What changed

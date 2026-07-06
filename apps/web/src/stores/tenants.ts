@@ -12,6 +12,16 @@ import {
 
 type TenantStatus = 'idle' | 'loading' | 'saving' | 'error'
 
+function upsertById<T extends { id: string }>(list: T[], item: T) {
+  const existingIndex = list.findIndex((existing) => existing.id === item.id)
+
+  if (existingIndex >= 0) {
+    list.splice(existingIndex, 1, item)
+  } else {
+    list.unshift(item)
+  }
+}
+
 export const useTenantsStore = defineStore('tenants', {
   state: () => ({
     items: [] as Tenant[],
@@ -19,6 +29,7 @@ export const useTenantsStore = defineStore('tenants', {
     error: null as string | null,
     lastInvitation: null as TenantInvitation | null,
     invitations: [] as TenantInvitation[],
+    invitationsLoaded: false,
     invitationsStatus: 'idle' as TenantStatus,
     invitationsError: null as string | null,
   }),
@@ -53,13 +64,7 @@ export const useTenantsStore = defineStore('tenants', {
 
       try {
         const tenant = await createTenantRequest(accessToken, input)
-        const existingIndex = this.items.findIndex((item) => item.id === tenant.id)
-
-        if (existingIndex >= 0) {
-          this.items.splice(existingIndex, 1, tenant)
-        } else {
-          this.items.unshift(tenant)
-        }
+        upsertById(this.items, tenant)
 
         this.status = 'idle'
         return tenant
@@ -83,7 +88,11 @@ export const useTenantsStore = defineStore('tenants', {
       try {
         const invitation = await inviteTenantMemberRequest(accessToken, tenantId, input)
         this.lastInvitation = invitation
-        this.invitations.unshift(invitation)
+
+        if (this.invitationsLoaded) {
+          this.invitations.unshift(invitation)
+        }
+
         this.status = 'idle'
         return invitation
       } catch (error) {
@@ -98,6 +107,7 @@ export const useTenantsStore = defineStore('tenants', {
 
       try {
         this.invitations = await listTenantInvitationsRequest(accessToken, tenantId)
+        this.invitationsLoaded = true
         this.invitationsStatus = 'idle'
         return this.invitations
       } catch (error) {
@@ -113,13 +123,7 @@ export const useTenantsStore = defineStore('tenants', {
 
       try {
         const invitation = await resendTenantInvitationRequest(accessToken, tenantId, invitationId)
-        const existingIndex = this.invitations.findIndex((item) => item.id === invitation.id)
-
-        if (existingIndex >= 0) {
-          this.invitations.splice(existingIndex, 1, invitation)
-        } else {
-          this.invitations.unshift(invitation)
-        }
+        upsertById(this.invitations, invitation)
 
         this.invitationsStatus = 'idle'
         return invitation
@@ -136,13 +140,7 @@ export const useTenantsStore = defineStore('tenants', {
 
       try {
         const invitation = await revokeTenantInvitationRequest(accessToken, tenantId, invitationId)
-        const existingIndex = this.invitations.findIndex((item) => item.id === invitation.id)
-
-        if (existingIndex >= 0) {
-          this.invitations.splice(existingIndex, 1, invitation)
-        } else {
-          this.invitations.unshift(invitation)
-        }
+        upsertById(this.invitations, invitation)
 
         this.invitationsStatus = 'idle'
         return invitation

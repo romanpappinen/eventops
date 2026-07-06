@@ -39,6 +39,10 @@ function invitationDisplayStatus(invitation: TenantInvitation) {
 }
 
 function canActOnInvitation(invitation: TenantInvitation) {
+  if (tenant.value && tenant.value.status !== 'active') {
+    return false
+  }
+
   const displayStatus = invitationDisplayStatus(invitation)
   return displayStatus === 'pending' || displayStatus === 'expired'
 }
