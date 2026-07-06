@@ -1,5 +1,67 @@
 # Diary
 
+Date: 2026-07-06 (5)
+
+## What changed
+
+Closed the last "Invitation resend + cleanup" checklist bullet: "Extend
+invitation list API responses + tenant settings UI with resend/error
+visibility." Investigation showed the API side was already done (`GET
+/tenants/:tenantId/invitations` already returns `email_delivery_status`,
+`email_delivery_error`, `delivery_attempts`, `accept_token_expires_at`), so
+this was frontend-only, in `apps/web`.
+
+* `apps/web/src/lib/api.ts`: extended the `TenantInvitation` type with the
+  delivery/expiry fields the API already returns but the client discarded;
+  added `listTenantInvitations`, `resendTenantInvitation`,
+  `revokeTenantInvitation`, all following the existing
+  `getTenants`/`inviteTenantMember` fetch conventions (`toTenantInvitation`
+  mapper factored out of the old inline mapping).
+* `apps/web/src/stores/tenants.ts`: added `invitations` state +
+  `fetchInvitations`/`resendInvitation`/`revokeInvitation` actions (same
+  try/catch + status-flag shape as `fetchTenants`/`createTenant`).
+  `inviteTenantMember` now also unshifts the new invitation into the list.
+* `apps/web/src/pages/TenantEditPage.vue`: new "Invitations" table section —
+  email, role, a **derived** status column (shows "expired" client-side when
+  `status === 'pending'` and `acceptTokenExpiresAt` has passed, mirroring
+  the same derivation the API already does server-side for the accept-page
+  lookup — no new DB status), email delivery status + inline error text,
+  expiry date, and Resend/Revoke buttons (shown only for pending/expired
+  rows; revoke asks for confirmation via a plain `confirm()`).
+* Tests: extended `apps/web/tests/tenants.store.test.ts` with
+  fetch/resend/revoke cases, following the existing `vi.stubGlobal('fetch',
+  ...)` pattern. Per discussion with the user, no new component-test harness
+  was introduced for `TenantEditPage.vue` (the repo has zero `.vue` component
+  tests today) — coverage stays at the store level.
+
+## What was verified
+
+* `pnpm --filter @eventops/web typecheck` (`vue-tsc --noEmit`) — passes.
+* `pnpm --filter @eventops/web test` — new `tenants.store.test.ts` cases
+  pass (5/5 in that file). Full-suite run also surfaced
+  `auth.store.test.ts > surfaces backend hydration errors...` failing;
+  confirmed via isolated run that this is **pre-existing and unrelated** —
+  it fails the same way on its own, untouched by this change. Left as-is,
+  reported to the user, not fixed here (out of scope for this checklist item).
+* **Not verified**: an actual browser click-through of the new UI. This
+  sandbox has no `docker`/Supabase CLI (so no real backend to log into) and
+  no `chromium-cli`/installed Playwright browser (so no static-page check
+  either). Functional correctness rests on typecheck + the store-level
+  tests (which assert exact fetch URLs, payload shapes, and resulting store
+  state) rather than an observed render. A manual click-through against a
+  real local Supabase instance is recommended before merging.
+
+## Next concrete step
+
+"Invitation resend + cleanup" checklist block is now fully closed, including
+this last bullet. Recommend either: (a) a manual UI smoke-test against a
+real local Supabase stack, or (b) move on to the next checklist section,
+"Event route gaps" (`GET /tenants/:tenantId/events/:eventId`, shared query
+validation wiring). Also flagging the pre-existing `auth.store.test.ts`
+failure as something to fix separately.
+
+---
+
 Date: 2026-07-06 (4)
 
 ## What changed

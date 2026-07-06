@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { routeNames } from '../core/navigation/routes'
 import { useAuthStore } from '../stores/auth'
 import { useTenantsStore } from '../stores/tenants'
+import type { TenantInvitation } from '../lib/api'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -14,6 +15,10 @@ const invitationRole = ref<'admin' | 'member'>('member')
 const inviteError = ref<string | null>(null)
 const inviteSuccess = ref<string | null>(null)
 
+const invitationActionError = ref<string | null>(null)
+const invitationActionSuccess = ref<string | null>(null)
+const pendingActionId = ref<string | null>(null)
+
 const tenantId = computed(() =>
   typeof route.params.tenantId === 'string' ? route.params.tenantId : '',
 )
@@ -21,15 +26,40 @@ const tenantId = computed(() =>
 const tenant = computed(() => tenants.getById(tenantId.value))
 const justCreated = computed(() => route.query.created === '1')
 
+function invitationDisplayStatus(invitation: TenantInvitation) {
+  if (
+    invitation.status === 'pending' &&
+    invitation.acceptTokenExpiresAt &&
+    new Date(invitation.acceptTokenExpiresAt).getTime() <= Date.now()
+  ) {
+    return 'expired'
+  }
+
+  return invitation.status
+}
+
+function canActOnInvitation(invitation: TenantInvitation) {
+  const displayStatus = invitationDisplayStatus(invitation)
+  return displayStatus === 'pending' || displayStatus === 'expired'
+}
+
 onMounted(async () => {
   const accessToken = auth.session?.access_token
 
-  if (!accessToken || !tenantId.value || tenant.value) {
+  if (!accessToken || !tenantId.value) {
     return
   }
 
+  if (!tenant.value) {
+    try {
+      await tenants.fetchTenants(accessToken)
+    } catch {
+      return
+    }
+  }
+
   try {
-    await tenants.fetchTenants(accessToken)
+    await tenants.fetchInvitations(accessToken, tenantId.value)
   } catch {
     return
   }
@@ -57,6 +87,58 @@ async function onInviteSubmit() {
     inviteSuccess.value = `Invitation created for ${invitation.email}.`
   } catch (error) {
     inviteError.value = error instanceof Error ? error.message : 'Failed to invite tenant member'
+  }
+}
+
+async function onResend(invitation: TenantInvitation) {
+  invitationActionError.value = null
+  invitationActionSuccess.value = null
+
+  const accessToken = auth.session?.access_token
+
+  if (!accessToken || !tenantId.value) {
+    invitationActionError.value = 'Your session is no longer available. Sign in again.'
+    return
+  }
+
+  pendingActionId.value = invitation.id
+
+  try {
+    await tenants.resendInvitation(accessToken, tenantId.value, invitation.id)
+    invitationActionSuccess.value = `Invitation resent to ${invitation.email}.`
+  } catch (error) {
+    invitationActionError.value =
+      error instanceof Error ? error.message : 'Failed to resend invitation'
+  } finally {
+    pendingActionId.value = null
+  }
+}
+
+async function onRevoke(invitation: TenantInvitation) {
+  invitationActionError.value = null
+  invitationActionSuccess.value = null
+
+  if (!window.confirm(`Revoke the invitation for ${invitation.email}?`)) {
+    return
+  }
+
+  const accessToken = auth.session?.access_token
+
+  if (!accessToken || !tenantId.value) {
+    invitationActionError.value = 'Your session is no longer available. Sign in again.'
+    return
+  }
+
+  pendingActionId.value = invitation.id
+
+  try {
+    await tenants.revokeInvitation(accessToken, tenantId.value, invitation.id)
+    invitationActionSuccess.value = `Invitation for ${invitation.email} revoked.`
+  } catch (error) {
+    invitationActionError.value =
+      error instanceof Error ? error.message : 'Failed to revoke invitation'
+  } finally {
+    pendingActionId.value = null
   }
 }
 </script>
@@ -153,6 +235,82 @@ async function onInviteSubmit() {
             </RouterLink>
           </div>
         </form>
+      </div>
+
+      <div class="tenant-card invitations-card">
+        <p class="eyebrow">Invitations</p>
+        <h2>Pending &amp; past invitations</h2>
+
+        <p v-if="invitationActionError" class="feedback feedback-error">
+          {{ invitationActionError }}
+        </p>
+        <p v-if="invitationActionSuccess" class="feedback feedback-success">
+          {{ invitationActionSuccess }}
+        </p>
+        <p v-if="tenants.invitationsError" class="feedback feedback-error">
+          {{ tenants.invitationsError }}
+        </p>
+
+        <p v-if="tenants.invitationsStatus === 'loading'">Loading invitations...</p>
+
+        <p v-else-if="tenants.invitations.length === 0" class="intro">
+          No invitations yet. Invite a member above to get started.
+        </p>
+
+        <div v-else class="table-panel">
+          <table class="invitations-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Email delivery</th>
+                <th>Expires</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="invitation in tenants.invitations" :key="invitation.id">
+                <td>{{ invitation.email }}</td>
+                <td>{{ invitation.role }}</td>
+                <td>{{ invitationDisplayStatus(invitation) }}</td>
+                <td>
+                  {{ invitation.emailDeliveryStatus }}
+                  <span v-if="invitation.emailDeliveryStatus === 'failed'" class="delivery-error">
+                    {{ invitation.emailDeliveryError }}
+                  </span>
+                </td>
+                <td>
+                  {{
+                    invitation.acceptTokenExpiresAt
+                      ? new Date(invitation.acceptTokenExpiresAt).toLocaleString()
+                      : 'N/A'
+                  }}
+                </td>
+                <td class="invitation-actions">
+                  <template v-if="canActOnInvitation(invitation)">
+                    <button
+                      type="button"
+                      class="table-link"
+                      :disabled="pendingActionId === invitation.id"
+                      @click="onResend(invitation)"
+                    >
+                      Resend
+                    </button>
+                    <button
+                      type="button"
+                      class="table-link table-link-danger"
+                      :disabled="pendingActionId === invitation.id"
+                      @click="onRevoke(invitation)"
+                    >
+                      Revoke
+                    </button>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </template>
   </section>
@@ -301,6 +459,67 @@ select {
   align-items: center;
   border: 1px solid rgba(29, 27, 23, 0.12);
   background: rgba(255, 255, 255, 0.68);
+}
+
+.table-panel {
+  margin-top: 20px;
+  overflow-x: auto;
+}
+
+.invitations-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.invitations-table th,
+.invitations-table td {
+  padding: 16px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(29, 27, 23, 0.08);
+  vertical-align: top;
+}
+
+.invitations-table th {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.invitation-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.delivery-error {
+  display: block;
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.table-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  padding: 10px 12px;
+  font-weight: 700;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(29, 27, 23, 0.08);
+  cursor: pointer;
+}
+
+.table-link:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.table-link-danger {
+  color: var(--danger);
+  border-color: rgba(180, 35, 24, 0.24);
 }
 
 @media (max-width: 900px) {

@@ -22,6 +22,13 @@ export interface TenantInvitation {
   role: 'admin' | 'member'
   status: 'pending' | 'accepted' | 'revoked' | 'expired'
   invitedByUserId: string
+  createdAt: string | null
+  acceptedAt: string | null
+  emailDeliveryStatus: 'pending' | 'sent' | 'failed'
+  emailSentAt: string | null
+  emailDeliveryError: string | null
+  deliveryAttempts: number
+  acceptTokenExpiresAt: string | null
 }
 
 export interface InvitationAcceptDetails {
@@ -71,15 +78,28 @@ interface TenantResponse {
   }
 }
 
+interface TenantInvitationItem {
+  id: string
+  tenant_id: string
+  email: string
+  role: 'admin' | 'member'
+  status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  invited_by_user_id: string
+  created_at?: string | null
+  accepted_at?: string | null
+  email_delivery_status?: 'pending' | 'sent' | 'failed'
+  email_sent_at?: string | null
+  email_delivery_error?: string | null
+  delivery_attempts?: number
+  accept_token_expires_at?: string | null
+}
+
 interface TenantInvitationResponse {
-  item: {
-    id: string
-    tenant_id: string
-    email: string
-    role: 'admin' | 'member'
-    status: 'pending' | 'accepted' | 'revoked' | 'expired'
-    invited_by_user_id: string
-  }
+  item: TenantInvitationItem
+}
+
+interface TenantInvitationsResponse {
+  items: TenantInvitationItem[]
 }
 
 interface InvitationAcceptDetailsResponse {
@@ -119,6 +139,24 @@ function createAuthHeaders(accessToken: string, contentType = false) {
 
 async function parseJson<T>(response: Response) {
   return (await response.json()) as T
+}
+
+function toTenantInvitation(item: TenantInvitationItem): TenantInvitation {
+  return {
+    id: item.id,
+    tenantId: item.tenant_id,
+    email: item.email,
+    role: item.role,
+    status: item.status,
+    invitedByUserId: item.invited_by_user_id,
+    createdAt: item.created_at ?? null,
+    acceptedAt: item.accepted_at ?? null,
+    emailDeliveryStatus: item.email_delivery_status ?? 'pending',
+    emailSentAt: item.email_sent_at ?? null,
+    emailDeliveryError: item.email_delivery_error ?? null,
+    deliveryAttempts: item.delivery_attempts ?? 0,
+    acceptTokenExpiresAt: item.accept_token_expires_at ?? null,
+  }
 }
 
 function toTenant(item: TenantResponse['item'] | TenantMembershipRow['tenant']): Tenant {
@@ -233,14 +271,62 @@ export async function inviteTenantMember(
     throw new Error(body.error ?? 'Failed to invite tenant member')
   }
 
-  return {
-    id: body.item.id,
-    tenantId: body.item.tenant_id,
-    email: body.item.email,
-    role: body.item.role,
-    status: body.item.status,
-    invitedByUserId: body.item.invited_by_user_id,
-  } satisfies TenantInvitation
+  return toTenantInvitation(body.item)
+}
+
+export async function listTenantInvitations(accessToken: string, tenantId: string) {
+  const response = await fetch(`${getApiBaseUrl()}/tenants/${tenantId}/invitations`, {
+    headers: createAuthHeaders(accessToken),
+  })
+
+  const body = await parseJson<Partial<TenantInvitationsResponse> & { error?: string }>(response)
+
+  if (!response.ok || !Array.isArray(body.items)) {
+    throw new Error(body.error ?? 'Failed to load invitations')
+  }
+
+  return body.items.map((item) => toTenantInvitation(item))
+}
+
+export async function resendTenantInvitation(
+  accessToken: string,
+  tenantId: string,
+  invitationId: string,
+) {
+  const response = await fetch(
+    `${getApiBaseUrl()}/tenants/${tenantId}/invitations/${invitationId}/resend`,
+    {
+      method: 'POST',
+      headers: createAuthHeaders(accessToken),
+    },
+  )
+
+  const body = await parseJson<Partial<TenantInvitationResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to resend invitation')
+  }
+
+  return toTenantInvitation(body.item)
+}
+
+export async function revokeTenantInvitation(
+  accessToken: string,
+  tenantId: string,
+  invitationId: string,
+) {
+  const response = await fetch(`${getApiBaseUrl()}/tenants/${tenantId}/invitations/${invitationId}`, {
+    method: 'DELETE',
+    headers: createAuthHeaders(accessToken),
+  })
+
+  const body = await parseJson<Partial<TenantInvitationResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to revoke invitation')
+  }
+
+  return toTenantInvitation(body.item)
 }
 
 export async function getInvitationAcceptDetails(accessToken: string, token: string) {

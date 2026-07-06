@@ -14,6 +14,11 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
       invitation details for a valid token") — `accept_token_expires_at` is
       hardcoded to `2026-06-01`, now in the past; use a relative/future date
       (done 2026-07-06: replaced with a `Date.now() + 30 days` constant)
+- [ ] Fix `apps/web/tests/auth.store.test.ts` > "surfaces backend hydration
+      errors after Supabase login succeeds" — fails in isolation too
+      (found 2026-07-06 while working on the invitation list UI, unrelated
+      to that change; `store.status` comes back `'idle'` instead of
+      `'error'`)
 
 ## Invitation resend + cleanup
 
@@ -23,8 +28,11 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
       (done 2026-07-06: hygiene sweep in apps/worker, pruning terminal
       invitation_email_jobs rows older than INVITATION_EMAIL_JOB_RETENTION_DAYS;
       no 'expired' DB status needed, expiry already enforced at accept time)
-- [ ] Extend invitation list API responses + tenant settings UI with
-      resend/error visibility
+- [x] Extend invitation list API responses + tenant settings UI with
+      resend/error visibility (done 2026-07-06: API already had the fields;
+      added apps/web list/resend/revoke UI in TenantEditPage.vue.
+      Not verified via real browser click-through -- no docker/Supabase or
+      browser driver in this sandbox; store-level tests + typecheck only)
 - [x] Worker tests for retry exhaustion and token regeneration behavior
       (done 2026-07-06: token regeneration covered at the API layer by the
       resend endpoint tests; retry exhaustion covered by
