@@ -1,5 +1,50 @@
 # Diary
 
+Date: 2026-07-06 (2)
+
+## What changed
+
+Implemented step 1 of the "Invitation resend + cleanup" checklist block:
+owner-only resend for a pending tenant invitation.
+
+* `apps/api/src/modules/tenants/tenant.service.ts`: new
+  `resendTenantInvitationForOwner(authToken, params)` — loads the tenant and
+  invitation through the user-scoped client (RLS-backed, same client used by
+  `listTenantInvitationsForOwner`/`revokeTenantInvitationForOwner`), rejects
+  with `404` if the invitation doesn't belong to the tenant, `409` if the
+  tenant is archived or the invitation isn't `status: 'pending'`, otherwise
+  reissues the accept token via the existing `updateInvitationAcceptToken` +
+  `enqueueInvitationEmail` helpers (same as the original invite path).
+* Fixed a real bug in `enqueueInvitationEmail`: the upsert didn't reset
+  `attempts`/`last_error`/`processed_at`. Without this, resending a
+  previously-exhausted job (`status: 'failed'`, `attempts` at the max) would
+  flip status back to `pending` but leave `attempts` at its old value, so the
+  very next worker tick would immediately re-fail it as terminal without ever
+  actually retrying the send. Now explicitly reset to `0`/`null`/`null`.
+* New route `POST /tenants/:tenantId/invitations/:invitationId/resend`
+  (`tenants.routes.ts`), owner-gated via the existing
+  `requireTenantAccess({minimumRole:'owner'})`, no new RPC or migration — this
+  mirrors how token issuance was already app-code rather than RPC for the
+  original invite flow.
+* New path-scoped rate limiter on the resend route (10 req/15min per IP,
+  `apps/api/src/app.ts`), same `createRateLimiter` pattern as
+  register/invitation-accept.
+* Tests: `tenant-invitations.test.ts` gained a
+  `POST .../resend` describe block (happy path incl. attempts-reset
+  assertion, 404, 409×2, 403, rate-limit header check).
+
+## What was verified
+
+* `pnpm --filter @eventops/api test` — 68/68 passing.
+* `pnpm --filter @eventops/api typecheck` — passes.
+
+## Next concrete step
+
+Step 2: worker hygiene sweep for terminal `invitation_email_jobs` rows
+(`apps/worker`) — see `CHECKLIST.md` and the plan already scoped for it.
+
+---
+
 Date: 2026-07-06
 
 ## What changed

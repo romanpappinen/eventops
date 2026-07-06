@@ -17,8 +17,8 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
 
 ## Invitation resend + cleanup
 
-- [ ] Owner-only resend invitation endpoint (fresh accept token, reset
-      expiry, requeue email job)
+- [x] Owner-only resend invitation endpoint (fresh accept token, reset
+      expiry, requeue email job) (done 2026-07-06)
 - [ ] Cleanup path for expired invitations and permanently-failed email jobs
 - [ ] Extend invitation list API responses + tenant settings UI with
       resend/error visibility

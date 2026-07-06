@@ -104,6 +104,9 @@ async function enqueueInvitationEmail(invitationId: string, acceptToken: string)
             invitation_id: invitationId,
             status: 'pending',
             accept_token: acceptToken,
+            attempts: 0,
+            last_error: null,
+            processed_at: null,
             scheduled_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         },
@@ -430,6 +433,71 @@ export async function revokeTenantInvitationForOwner(
     }
 
     return normalizeInvitationRecord(invitation as TenantInvitationRecord);
+}
+
+export async function resendTenantInvitationForOwner(
+    authToken: string,
+    params: TenantInvitationRouteParams
+) {
+    const supabaseUser = getSupabaseUser(authToken);
+
+    const { data: tenant, error: tenantError } = await supabaseUser
+        .from('tenants')
+        .select('id, status')
+        .eq('id', params.tenantId)
+        .maybeSingle();
+
+    if (tenantError) {
+        throw createTenantError('Failed to load tenant', 502);
+    }
+
+    if (tenant?.status !== 'active') {
+        throw createTenantError('Tenant is archived', 409);
+    }
+
+    const { data, error } = await supabaseUser
+        .from('tenant_invitations')
+        .select(
+            'id, tenant_id, email, role, status, invited_by_user_id, created_at, accepted_at, email_delivery_status, email_sent_at, email_message_id, email_delivery_error, delivery_attempts, accept_token_expires_at'
+        )
+        .eq('id', params.invitationId)
+        .eq('tenant_id', params.tenantId)
+        .maybeSingle();
+
+    if (error) {
+        throw createTenantError('Failed to load invitation', 502);
+    }
+
+    if (!data) {
+        throw createTenantError('Invitation not found', 404);
+    }
+
+    if (data.status !== 'pending') {
+        throw createTenantError('Only pending invitations can be resent', 409);
+    }
+
+    const normalizedInvitation = normalizeInvitationRecord(data as TenantInvitationRecord);
+    const acceptToken = createInvitationAcceptToken();
+
+    try {
+        const expiresAt = await updateInvitationAcceptToken(normalizedInvitation.id, acceptToken);
+        await enqueueInvitationEmail(normalizedInvitation.id, acceptToken);
+
+        return {
+            ...normalizedInvitation,
+            accept_token_expires_at: expiresAt,
+        };
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : 'Failed to queue invitation email delivery';
+        await markInvitationDeliveryFailed(normalizedInvitation.id, message);
+
+        return {
+            ...normalizedInvitation,
+            email_delivery_status: 'failed',
+            email_delivery_error: message,
+        };
+    }
 }
 
 export async function getInvitationByToken(

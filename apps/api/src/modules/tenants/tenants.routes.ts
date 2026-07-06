@@ -9,6 +9,7 @@ import {
     getTenant,
     listTenantInvitations,
     listTenants,
+    resendTenantInvitation,
     revokeTenantInvitation,
     updateTenant,
 } from './tenants.controller.js';
@@ -68,4 +69,11 @@ tenantsRouter.delete(
     validate(tenantInvitationRouteParamsSchema, 'params'),
     requireTenantAccess({ minimumRole: 'owner' }),
     asyncHandler(revokeTenantInvitation)
+);
+tenantsRouter.post(
+    '/:tenantId/invitations/:invitationId/resend',
+    requireAuth,
+    validate(tenantInvitationRouteParamsSchema, 'params'),
+    requireTenantAccess({ minimumRole: 'owner' }),
+    asyncHandler(resendTenantInvitation)
 );

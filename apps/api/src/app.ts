@@ -31,9 +31,15 @@ export function createApp() {
         max: 30,
         message: 'Too many invitation requests. Try again later.',
     });
+    const invitationResendLimiter = createRateLimiter({
+        windowMs: 15 * 60 * 1000,
+        max: 10,
+        message: 'Too many resend requests. Try again later.',
+    });
 
     app.use('/auth/register', authRegisterLimiter);
     app.use('/invitations/accept', invitationAcceptLimiter);
+    app.use('/tenants/:tenantId/invitations/:invitationId/resend', invitationResendLimiter);
 
     app.use('/auth', authRouter);
     app.use('/invitations', invitationsRouter);
