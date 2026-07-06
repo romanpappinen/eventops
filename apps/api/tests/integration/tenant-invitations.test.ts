@@ -41,19 +41,55 @@ function mockInvitationEmailJobQueue() {
         error: null,
     });
 
+    // Supports both call shapes used against `tenant_invitations`:
+    // - `.update(...).eq('id', x)` awaited directly (resetInvitationDeliveryState,
+    //   markInvitationDeliveryFailed)
+    // - `.update(...).eq('id', x).eq('status', 'pending').select('id').maybeSingle()`
+    //   (updateInvitationAcceptToken's guarded token reissue)
+    const maybeSingle = vi.fn().mockResolvedValue({
+        data: { id: invitationId },
+        error: null,
+    });
+    const select = vi.fn(() => ({ maybeSingle }));
+    const eq = vi.fn(() => updateChain);
+    const updateChain: { eq: typeof eq; select: typeof select } & PromiseLike<{
+        error: null;
+    }> = {
+        eq,
+        select,
+        then: (resolve) => Promise.resolve({ error: null }).then(resolve),
+    };
+    const update = vi.fn(() => updateChain);
+
     adminFrom.mockImplementation((table: string) => {
         if (table === 'invitation_email_jobs') {
             return { upsert };
         }
 
         if (table === 'tenant_invitations') {
-            return { update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) })) };
+            return { update };
         }
 
         return { upsert: vi.fn(), update: vi.fn() };
     });
 
-    return { upsert };
+    return { upsert, update, eq, maybeSingle };
+}
+
+function buildMembershipSelect(role: string) {
+    const maybeSingle = vi.fn().mockResolvedValue({
+        data: {
+            id: 'membership-123',
+            tenant_id: tenantId,
+            role,
+            status: 'active',
+        },
+        error: null,
+    });
+    const eqStatus = vi.fn(() => ({ maybeSingle }));
+    const eqUser = vi.fn(() => ({ eq: eqStatus }));
+    const eqTenant = vi.fn(() => ({ eq: eqUser }));
+    return vi.fn(() => ({ eq: eqTenant }));
 }
 
 function mockResendFlow(options?: {
@@ -61,19 +97,7 @@ function mockResendFlow(options?: {
     tenant?: Record<string, unknown> | null;
     invitation?: Record<string, unknown> | null;
 }) {
-    const membershipMaybeSingle = vi.fn().mockResolvedValue({
-        data: {
-            id: 'membership-123',
-            tenant_id: tenantId,
-            role: options?.role ?? 'owner',
-            status: 'active',
-        },
-        error: null,
-    });
-    const membershipEqStatus = vi.fn(() => ({ maybeSingle: membershipMaybeSingle }));
-    const membershipEqUser = vi.fn(() => ({ eq: membershipEqStatus }));
-    const membershipEqTenant = vi.fn(() => ({ eq: membershipEqUser }));
-    const membershipSelect = vi.fn(() => ({ eq: membershipEqTenant }));
+    const membershipSelect = buildMembershipSelect(options?.role ?? 'owner');
 
     const tenantMaybeSingle = vi.fn().mockResolvedValue({
         data: options?.tenant ?? { id: tenantId, status: 'active' },
@@ -124,19 +148,7 @@ function mockResendFlow(options?: {
 }
 
 function mockTenantAccess(role = 'owner') {
-    const maybeSingle = vi.fn().mockResolvedValue({
-        data: {
-            id: 'membership-123',
-            tenant_id: tenantId,
-            role,
-            status: 'active',
-        },
-        error: null,
-    });
-    const eqStatus = vi.fn(() => ({ maybeSingle }));
-    const eqUser = vi.fn(() => ({ eq: eqStatus }));
-    const eqTenant = vi.fn(() => ({ eq: eqUser }));
-    const select = vi.fn(() => ({ eq: eqTenant }));
+    const select = buildMembershipSelect(role);
 
     from.mockImplementation((table: string) => {
         if (table === 'memberships') {
@@ -526,7 +538,7 @@ describe('POST /tenants/:tenantId/invitations/:invitationId/resend', () => {
             error: null,
         });
         mockResendFlow();
-        const { upsert } = mockInvitationEmailJobQueue();
+        const { upsert, eq } = mockInvitationEmailJobQueue();
 
         const app = createApp();
 
@@ -534,6 +546,7 @@ describe('POST /tenants/:tenantId/invitations/:invitationId/resend', () => {
             .post(`/tenants/${tenantId}/invitations/${invitationId}/resend`)
             .set('Authorization', 'Bearer valid-token');
 
+        expect(eq).toHaveBeenCalledWith('status', 'pending');
         expect(upsert).toHaveBeenCalledWith(
             expect.objectContaining({
                 invitation_id: invitationId,
@@ -556,13 +569,40 @@ describe('POST /tenants/:tenantId/invitations/:invitationId/resend', () => {
                 role: 'member',
                 status: 'pending',
                 invited_by_user_id: 'user-123',
-                email_delivery_status: 'failed',
+                email_delivery_status: 'pending',
                 email_sent_at: null,
                 email_message_id: null,
-                email_delivery_error: 'boom',
-                delivery_attempts: 5,
+                email_delivery_error: null,
+                delivery_attempts: 0,
                 accept_token_expires_at: expect.any(String),
             },
+        });
+    });
+
+    it('returns 409 when the invitation stops being pending between the read and the token update', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'owner@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+        mockResendFlow();
+        const { maybeSingle } = mockInvitationEmailJobQueue();
+        maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .post(`/tenants/${tenantId}/invitations/${invitationId}/resend`)
+            .set('Authorization', 'Bearer valid-token');
+
+        expect(response.status).toBe(409);
+        expect(response.body).toEqual({
+            error: 'Invitation is no longer pending',
         });
     });
 

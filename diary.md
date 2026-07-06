@@ -1,5 +1,63 @@
 # Diary
 
+Date: 2026-07-06 (6)
+
+## What changed
+
+Ran a code review (`/code-review --level high`) over the whole session's
+work (`git diff 92166be..HEAD`: test date fix, resend endpoint, worker
+cleanup sweep + retry tests, invitation list UI) and found 9 issues, most
+severe first. This entry covers the API-side fixes (findings 1, 2, 5, 7, 8);
+web-side and worker-side fixes are separate entries.
+
+* **Bug (confirmed)**: `resendTenantInvitationForOwner` returned (and on
+  failure, persisted) stale `email_delivery_status`/`email_delivery_error`/
+  `delivery_attempts` instead of reflecting the just-triggered resend — a
+  resend of a previously-failed invitation would report "still failed" even
+  when it succeeded, and `markInvitationDeliveryFailed` unconditionally
+  zeroing `delivery_attempts` in the DB while the response kept the stale
+  pre-resend count meant the API response and persisted row diverged.
+* **Bug (plausible, race)**: the pending-status check was a plain SELECT
+  followed by an unconditional token UPDATE with no `WHERE status =
+  'pending'` guard, unlike the atomic pattern the `revoke_tenant_invitation`
+  RPC uses. Fixed both together by extracting a shared
+  `reissueInvitationAcceptToken(invitationId)` helper
+  (`tenant.service.ts`) used by both `inviteTenantMember` and
+  `resendTenantInvitationForOwner`:
+  * `updateInvitationAcceptToken` now guards its UPDATE with `.eq('status',
+    'pending')` and `.select('id').maybeSingle()`; if the row doesn't match
+    (status changed concurrently), it throws a genuine `409 "Invitation is
+    no longer pending"` instead of silently succeeding.
+  * a new `resetInvitationDeliveryState` explicitly resets
+    `email_delivery_status`/`email_delivery_error`/`email_sent_at`/
+    `email_message_id`/`delivery_attempts` to their fresh-send defaults in
+    the DB (not just the response) on successful reissue, so a page refresh
+    stays consistent with the immediate response.
+* **Efficiency**: `resendTenantInvitationForOwner`'s tenant-status check and
+  invitation lookup (two independent reads) now run via `Promise.all`
+  instead of sequentially.
+* **Simplification**: extracted `buildMembershipSelect(role)` in
+  `tenant-invitations.test.ts` so `mockResendFlow` reuses the same
+  membership-chain mock as `mockTenantAccess` instead of duplicating it.
+* Tests: updated the resend test's expectations to the corrected
+  delivery-state values, added a mock chain (`update`/`eq`/`select`/
+  `maybeSingle`) supporting both the guarded-update and plain-update call
+  shapes, and added a new test for the 409-on-concurrent-status-change case.
+
+## What was verified
+
+* `pnpm --filter @eventops/api typecheck` — passes.
+* `pnpm --filter @eventops/api test` — 69/69 passing (68 + 1 new race-guard
+  test).
+
+## Next concrete step
+
+Apply the remaining review findings: web-side (archived-tenant action
+visibility, store unshift-without-fetch, upsert-by-id duplication) and
+worker-side (cleanup sweep's wasteful `return=representation`).
+
+---
+
 Date: 2026-07-06 (5)
 
 ## What changed

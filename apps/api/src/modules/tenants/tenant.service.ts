@@ -132,23 +132,74 @@ async function markInvitationDeliveryFailed(invitationId: string, errorMessage: 
         .eq('id', invitationId);
 }
 
+async function resetInvitationDeliveryState(invitationId: string) {
+    const supabaseAdmin = getSupabaseAdmin();
+    await supabaseAdmin
+        .from('tenant_invitations')
+        .update({
+            email_delivery_status: 'pending',
+            email_delivery_error: null,
+            email_sent_at: null,
+            email_message_id: null,
+            delivery_attempts: 0,
+        })
+        .eq('id', invitationId);
+}
+
 async function updateInvitationAcceptToken(invitationId: string, acceptToken: string) {
     const supabaseAdmin = getSupabaseAdmin();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const { error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
         .from('tenant_invitations')
         .update({
             accept_token_hash: hashInvitationAcceptToken(acceptToken),
             accept_token_expires_at: expiresAt,
             accept_token_used_at: null,
         })
-        .eq('id', invitationId);
+        .eq('id', invitationId)
+        .eq('status', 'pending')
+        .select('id')
+        .maybeSingle();
 
     if (error) {
         throw error;
     }
 
+    if (!data) {
+        throw createTenantError('Invitation is no longer pending', 409);
+    }
+
     return expiresAt;
+}
+
+async function reissueInvitationAcceptToken(invitationId: string) {
+    const acceptToken = createInvitationAcceptToken();
+    const expiresAt = await updateInvitationAcceptToken(invitationId, acceptToken);
+
+    try {
+        await resetInvitationDeliveryState(invitationId);
+        await enqueueInvitationEmail(invitationId, acceptToken);
+
+        return {
+            accept_token_expires_at: expiresAt,
+            email_delivery_status: 'pending' as const,
+            email_delivery_error: null,
+            email_sent_at: null,
+            email_message_id: null,
+            delivery_attempts: 0,
+        };
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : 'Failed to queue invitation email delivery';
+        await markInvitationDeliveryFailed(invitationId, message);
+
+        return {
+            accept_token_expires_at: expiresAt,
+            email_delivery_status: 'failed' as const,
+            email_delivery_error: message,
+            delivery_attempts: 0,
+        };
+    }
 }
 
 export async function listTenantsForUser(authToken: string, userId: string) {
@@ -356,27 +407,12 @@ export async function inviteTenantMember(
     }
 
     const normalizedInvitation = normalizeInvitationRecord(invitation as TenantInvitationRecord);
-    const acceptToken = createInvitationAcceptToken();
+    const reissueResult = await reissueInvitationAcceptToken(normalizedInvitation.id);
 
-    try {
-        const expiresAt = await updateInvitationAcceptToken(normalizedInvitation.id, acceptToken);
-        await enqueueInvitationEmail(normalizedInvitation.id, acceptToken);
-
-        return {
-            ...normalizedInvitation,
-            accept_token_expires_at: expiresAt,
-        };
-    } catch (error) {
-        const message =
-            error instanceof Error ? error.message : 'Failed to queue invitation email delivery';
-        await markInvitationDeliveryFailed(normalizedInvitation.id, message);
-
-        return {
-            ...normalizedInvitation,
-            email_delivery_status: 'failed',
-            email_delivery_error: message,
-        };
-    }
+    return {
+        ...normalizedInvitation,
+        ...reissueResult,
+    };
 }
 
 export async function listTenantInvitationsForOwner(authToken: string, tenantId: string) {
@@ -441,63 +477,47 @@ export async function resendTenantInvitationForOwner(
 ) {
     const supabaseUser = getSupabaseUser(authToken);
 
-    const { data: tenant, error: tenantError } = await supabaseUser
-        .from('tenants')
-        .select('id, status')
-        .eq('id', params.tenantId)
-        .maybeSingle();
+    const [tenantResult, invitationResult] = await Promise.all([
+        supabaseUser.from('tenants').select('id, status').eq('id', params.tenantId).maybeSingle(),
+        supabaseUser
+            .from('tenant_invitations')
+            .select(
+                'id, tenant_id, email, role, status, invited_by_user_id, created_at, accepted_at, email_delivery_status, email_sent_at, email_message_id, email_delivery_error, delivery_attempts, accept_token_expires_at'
+            )
+            .eq('id', params.invitationId)
+            .eq('tenant_id', params.tenantId)
+            .maybeSingle(),
+    ]);
 
-    if (tenantError) {
+    if (tenantResult.error) {
         throw createTenantError('Failed to load tenant', 502);
     }
 
-    if (tenant?.status !== 'active') {
+    if (tenantResult.data?.status !== 'active') {
         throw createTenantError('Tenant is archived', 409);
     }
 
-    const { data, error } = await supabaseUser
-        .from('tenant_invitations')
-        .select(
-            'id, tenant_id, email, role, status, invited_by_user_id, created_at, accepted_at, email_delivery_status, email_sent_at, email_message_id, email_delivery_error, delivery_attempts, accept_token_expires_at'
-        )
-        .eq('id', params.invitationId)
-        .eq('tenant_id', params.tenantId)
-        .maybeSingle();
-
-    if (error) {
+    if (invitationResult.error) {
         throw createTenantError('Failed to load invitation', 502);
     }
 
-    if (!data) {
+    if (!invitationResult.data) {
         throw createTenantError('Invitation not found', 404);
     }
 
-    if (data.status !== 'pending') {
+    if (invitationResult.data.status !== 'pending') {
         throw createTenantError('Only pending invitations can be resent', 409);
     }
 
-    const normalizedInvitation = normalizeInvitationRecord(data as TenantInvitationRecord);
-    const acceptToken = createInvitationAcceptToken();
+    const normalizedInvitation = normalizeInvitationRecord(
+        invitationResult.data as TenantInvitationRecord
+    );
+    const reissueResult = await reissueInvitationAcceptToken(normalizedInvitation.id);
 
-    try {
-        const expiresAt = await updateInvitationAcceptToken(normalizedInvitation.id, acceptToken);
-        await enqueueInvitationEmail(normalizedInvitation.id, acceptToken);
-
-        return {
-            ...normalizedInvitation,
-            accept_token_expires_at: expiresAt,
-        };
-    } catch (error) {
-        const message =
-            error instanceof Error ? error.message : 'Failed to queue invitation email delivery';
-        await markInvitationDeliveryFailed(normalizedInvitation.id, message);
-
-        return {
-            ...normalizedInvitation,
-            email_delivery_status: 'failed',
-            email_delivery_error: message,
-        };
-    }
+    return {
+        ...normalizedInvitation,
+        ...reissueResult,
+    };
 }
 
 export async function getInvitationByToken(
