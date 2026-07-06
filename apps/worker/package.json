@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "echo lint worker",
-    "test": "echo test worker"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@eventops/config": "workspace:*",
@@ -17,6 +18,7 @@
   "devDependencies": {
     "@eventops/tsconfig": "workspace:*",
     "@types/node": "^22.7.4",
-    "tsx": "^4.19.1"
+    "tsx": "^4.19.1",
+    "vitest": "^4.1.4"
   }
 }

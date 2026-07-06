@@ -1,5 +1,67 @@
 # Diary
 
+Date: 2026-07-06 (3)
+
+## What changed
+
+Implemented step 2 of the "Invitation resend + cleanup" checklist block: a
+minimal hygiene sweep for terminal `invitation_email_jobs` rows.
+
+* `packages/config/src/lib/worker-env.ts`: added
+  `INVITATION_EMAIL_JOB_RETENTION_DAYS` (default 30).
+* `apps/worker/src/lib/supabase-rest.ts`: added
+  `deleteTerminalInvitationEmailJobsOlderThan(cutoffIso)` (REST `DELETE` where
+  `status in (sent,failed)` and `processed_at < cutoffIso`); widened
+  `PostgrestQueryOptions.method` to include `'DELETE'`.
+* `apps/worker/src/invitation-cleanup-sweep.ts` (new): `computeRetentionCutoff`
+  (pure), `runInvitationCleanupSweepOnce` (one delete pass),
+  `runInvitationCleanupSweepTick` (catches/logs errors so one failure can't
+  kill the loop), and `runInvitationCleanupSweep` (the infinite poll loop,
+  1 hour interval, hardcoded — no new env var for cadence).
+* `apps/worker/src/index.ts`: now runs the cleanup sweep alongside the
+  existing email worker (`Promise.all([...])`).
+* No new `'expired'` DB status and no plaintext-token cleanup needed —
+  confirmed during planning that `markJobSuccess`/`markJobFailure` already
+  null out `accept_token` the moment a job goes terminal; this sweep is pure
+  row-count housekeeping.
+* Added minimal Vitest to `apps/worker` (previously had zero test
+  infrastructure): `vitest.config.ts`, `tests/setup.ts`, and
+  `tests/invitation-cleanup-sweep.test.ts` covering cutoff math, the delete
+  call, and that a rejected delete is caught and logged rather than thrown.
+
+**Unrelated bug found and fixed along the way**: `packages/config/src/lib/`
+had three stale, git-tracked, CommonJS-compiled `.js` files
+(`index.js`, `api-env.js`, `worker-env.js`) sitting next to their `.ts`
+sources from an old one-off compile (commit `92596af`). The package's
+`tsconfig.json` has `noEmit: true`, so nothing regenerates them — they were
+dead weight that happened to silently shadow the real `.ts` source for any
+resolver that finds the literal `.js` path, and being CommonJS in a
+`"type": "module"` package, would throw if ever actually loaded by Node.
+This is exactly what broke my new `INVITATION_EMAIL_JOB_RETENTION_DAYS` field
+in testing — the schema resolved was the stale shadow copy. Deleted all
+three stray files; `@eventops/config`'s own `noEmit` typecheck and both
+consuming packages (`@eventops/api`, `@eventops/worker`) still typecheck and
+test clean without them.
+
+## What was verified
+
+* `pnpm --filter @eventops/worker test` — 3/3 passing (new suite).
+* `pnpm --filter @eventops/worker typecheck` — passes.
+* `pnpm --filter @eventops/config typecheck` — passes (after removing the
+  stray `.js` files).
+* `pnpm --filter @eventops/api typecheck` and
+  `pnpm --filter @eventops/api test` — still 68/68 passing, confirming the
+  removed `.js` files weren't load-bearing for the API either.
+
+## Next concrete step
+
+Step 3 (stretch): add `apps/worker/tests/invitation-email-worker.test.ts`
+covering the existing `markJobFailure` terminal-vs-retry branches, now that
+Vitest is wired up for `apps/worker`. Otherwise this checklist item stays
+open for a follow-up pass.
+
+---
+
 Date: 2026-07-06 (2)
 
 ## What changed

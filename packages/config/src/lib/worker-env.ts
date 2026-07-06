@@ -10,7 +10,8 @@ const workerEnvSchema = z.object({
     APP_WEB_BASE_URL: z.string().url(),
     INVITATION_EMAIL_BATCH_SIZE: z.coerce.number().int().min(1).default(10),
     INVITATION_EMAIL_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(5000),
-    INVITATION_EMAIL_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5)
+    INVITATION_EMAIL_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+    INVITATION_EMAIL_JOB_RETENTION_DAYS: z.coerce.number().int().min(1).default(30)
 });
 
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;

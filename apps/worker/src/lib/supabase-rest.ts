@@ -1,7 +1,7 @@
 import { parseWorkerEnv } from '@eventops/config';
 
 interface PostgrestQueryOptions {
-    method?: 'GET' | 'POST' | 'PATCH';
+    method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     body?: unknown;
     query?: Record<string, string>;
     select?: string;
@@ -158,6 +158,20 @@ export async function updateInvitationEmailJob(
             id: `eq.${jobId}`,
         },
     });
+}
+
+export async function deleteTerminalInvitationEmailJobsOlderThan(cutoffIso: string) {
+    const rows =
+        (await postgrestRequest<Array<{ id: string }>>('invitation_email_jobs', {
+            method: 'DELETE',
+            query: {
+                status: 'in.(sent,failed)',
+                processed_at: `lt.${cutoffIso}`,
+            },
+            prefer: 'return=representation',
+        })) ?? [];
+
+    return rows.length;
 }
 
 export async function updateTenantInvitation(invitationId: string, payload: Record<string, unknown>) {
