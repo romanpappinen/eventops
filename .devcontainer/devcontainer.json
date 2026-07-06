@@ -18,6 +18,9 @@
       }
     }
   },
+  "mounts": [
+    "source=eventops-claude-home,target=/home/node/.claude,type=volume"
+  ],
   "postCreateCommand": "pnpm install",
   "runArgs": [
     "--network=eventops-restricted",
