@@ -38,6 +38,17 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
       resend endpoint tests; retry exhaustion covered by
       invitation-email-worker.test.ts)
 
+## Code review pass (done 2026-07-06)
+
+- [x] `/code-review --level high` over the whole session's work
+      (`92166be..HEAD`) — 9 findings, all fixed:
+      resend returning/persisting stale delivery state, a status-check race
+      in resend's token reissue, archived-tenant Resend/Revoke buttons not
+      hidden in the UI, store list mutated without a successful prior fetch,
+      three duplicated upsert-by-id blocks, duplicated test mock chains,
+      sequential-but-independent Supabase calls, and an oversized cleanup
+      DELETE payload.
+
 ## Event route gaps
 
 - [ ] Implement `GET /tenants/:tenantId/events/:eventId`
