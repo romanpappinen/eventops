@@ -1,5 +1,33 @@
 # Diary
 
+Date: 2026-07-06
+
+## What changed
+
+Fixed the time-bombed fixed date in `invitations-accept.test.ts` flagged in the
+previous entry and in `CHECKLIST.md`. The default mocked invitation row hardcoded
+`accept_token_expires_at: '2026-06-01T00:00:00.000Z'`, which had passed, so
+`getInvitationByToken` (`apps/api/src/modules/tenants/tenant.service.ts`)
+correctly computed the invitation as expired and the
+`'returns invitation details for a valid token'` test started failing. Replaced
+the hardcoded string with a `futureExpiresAt` constant computed as
+`Date.now() + 30 days` at module load, used both in the mock fixture and in the
+test's expected response body, so the fixture can't time-bomb again. Test-only
+change — no production code touched, since the controller's expiry logic was
+already correct.
+
+## What was verified
+
+* `pnpm --filter @eventops/api test` — 62/62 passing (previously 61/62).
+* `pnpm --filter @eventops/api typecheck` — passes.
+
+## Next concrete step
+
+Move on to the "Invitation resend + cleanup" checklist item: owner-only resend
+invitation endpoint (fresh accept token, reset expiry, requeue email job).
+
+---
+
 Date: 2026-07-04
 
 ## What changed

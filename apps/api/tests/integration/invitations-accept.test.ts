@@ -5,6 +5,7 @@ import { createApp } from '../../src/app.js';
 const invitationId = '550e8400-e29b-41d4-a716-446655440001';
 const tenantId = '550e8400-e29b-41d4-a716-446655440000';
 const token = 'invite-token-123';
+const futureExpiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString();
 
 const { getUser, rpc, from, adminFrom, ensureUserProfile } = vi.hoisted(() => ({
     getUser: vi.fn(),
@@ -52,7 +53,7 @@ function mockInvitationLookup(options?: {
                 status: 'pending',
                 accepted_at: null,
                 invited_by_user_id: 'user-123',
-                accept_token_expires_at: '2026-06-01T00:00:00.000Z',
+                accept_token_expires_at: futureExpiresAt,
             },
         error: null,
     });
@@ -132,7 +133,7 @@ describe('GET /invitations/accept', () => {
                 tenantName: 'Acme Ops',
                 role: 'member',
                 status: 'pending',
-                expiresAt: '2026-06-01T00:00:00.000Z',
+                expiresAt: futureExpiresAt,
             },
         });
     });

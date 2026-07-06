@@ -10,9 +10,10 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
 
 ## Test hygiene
 
-- [ ] Fix time-bombed fixed date in `invitations-accept.test.ts` ("returns
+- [x] Fix time-bombed fixed date in `invitations-accept.test.ts` ("returns
       invitation details for a valid token") — `accept_token_expires_at` is
       hardcoded to `2026-06-01`, now in the past; use a relative/future date
+      (done 2026-07-06: replaced with a `Date.now() + 30 days` constant)
 
 ## Invitation resend + cleanup
 
