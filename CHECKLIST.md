@@ -124,18 +124,32 @@ machine, not from inside this sandbox — this container has no Docker.
       `curl http://host.docker.internal:54321` — confirm it responds
       before touching any app config.
       (confirmed 2026-07-10, see above)
-- [ ] **This container**: set `SUPABASE_URL=http://host.docker.internal:54321`
+- [x] **This container**: set `SUPABASE_URL=http://host.docker.internal:54321`
       (not `127.0.0.1` — that resolves to the container itself) plus
       `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` from the
       `supabase start` output, in `apps/api/.env.local` and
       `apps/worker/.env.local` (create from `.env.example`, never commit).
-- [ ] **This container**: run `pnpm --filter @eventops/api test` /
-      `pnpm --filter @eventops/worker test` against the real stack once
-      wired, expect some currently-mocked tests to need rework (mocks
-      assert exact Supabase query-builder call shapes; a real client won't
-      go through those mocks at all — decide per-suite whether to keep the
-      existing mocked unit tests *and* add a smaller real-stack integration
-      suite, or replace one with the other).
+      (done 2026-07-10 by the user; turned out `apps/api/src/server.ts`
+      actually loads a single root-level `.env`, not a per-app
+      `.env.local` — noted here since the original plan guessed wrong)
+- [x] **This container**: verify the connection end-to-end.
+      (confirmed 2026-07-10: started `pnpm --filter @eventops/api dev`
+      against the real env, hit `GET /health` -> 200, then
+      `POST /auth/register` with a disposable test address -> 201 with a
+      real GoTrue-issued user id and a row inserted into `public.users`
+      through the RLS-scoped client. Full real round trip, not mocked.
+      Note: running the *existing* `pnpm test` suites would NOT have
+      proven this -- every test mocks `getSupabaseUser`/`getSupabaseAdmin`
+      via `vi.mock`, so they never touch the real stack regardless of env
+      vars. Stopped the dev server after the check; it is not left
+      running.)
+- [ ] **This container**: decide the test strategy for the real stack —
+      mocks assert exact Supabase query-builder call shapes, so a real
+      client bypasses them entirely. Options: keep the existing mocked
+      unit tests as-is and add a *separate*, smaller real-stack
+      integration suite (e.g. `tests/integration-real/`, opt-in via an env
+      flag so CI/sandbox runs without a live Supabase still pass), or
+      replace some mocked suites outright. Not decided yet.
 - [ ] **This container**: once connectivity works, use the real stack to
       finally do the manual browser click-through of the invitation
       list/resend/revoke UI that's been deferred since 2026-07-06 (see

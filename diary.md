@@ -1,5 +1,43 @@
 # Diary
 
+Date: 2026-07-10 (6)
+
+## What changed
+
+No production code changes. Verified the real Supabase connection
+end-to-end, now that the user wired env vars in (turned out
+`apps/api/src/server.ts` loads a single root-level `.env`, not a per-app
+`.env.local` as the checklist originally guessed).
+
+Started `pnpm --filter @eventops/api dev` in the background against the
+real env. `GET /health` returned 200. `POST /auth/register` with a
+disposable test address returned 201 with a real GoTrue-issued user id and
+a row landing in `public.users` -- a genuine round trip through Auth + the
+RLS-scoped insert, not a mock. Stopped the dev server afterward so nothing
+is left running in the background.
+
+Important finding to remember: running the *existing* test suites
+(`pnpm --filter @eventops/api test` etc.) would NOT have proven any of
+this -- every current test mocks `getSupabaseUser`/`getSupabaseAdmin` via
+`vi.mock`, so they never touch the real stack no matter what the env vars
+say. Proving real connectivity required an actual running server and a
+real HTTP request, not the test suite.
+
+## What was verified
+
+`GET /health` (200) and `POST /auth/register` (201, real user id) against
+the live local Supabase stack via `host.docker.internal:54321`.
+
+## Next concrete step
+
+Decide the test strategy for exercising the real stack going forward:
+keep the mocked unit tests as-is and add a separate, opt-in real-stack
+integration suite, or replace some mocked suites. Then, once that's
+settled, finally do the manual browser click-through of the invitation
+list/resend/revoke UI deferred since 2026-07-06.
+
+---
+
 Date: 2026-07-10 (5)
 
 ## What changed
