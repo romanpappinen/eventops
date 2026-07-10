@@ -1,5 +1,42 @@
 # Diary
 
+Date: 2026-07-10 (5)
+
+## What changed
+
+No code changes. Verified checklist items 1-2 of the new "Local Supabase
+stack" section: the user had already run `supabase start` on the host.
+Probed connectivity from inside this devcontainer with `curl`:
+
+* `http://host.docker.internal:54321/rest/v1/` returns a live PostgREST
+  OpenAPI schema listing this repo's exact tables (`users`, `tenants`,
+  `events`, with custom columns like `idempotency_key`) -- confirms this is
+  the right project's stack, migrated.
+* `http://host.docker.internal:54321/auth/v1/health` responds with GoTrue
+  `v2.188.1` -- auth service is up.
+* Port 54322 (direct Postgres) and 54323 (Studio) both respond too.
+* `host.docker.internal` resolves from inside this container without any
+  `.devcontainer/devcontainer.json` change -- the planned `--add-host`
+  runArgs edit turned out to be unnecessary; the platform already provides
+  it. Struck that step from the checklist rather than making an edit that
+  wasn't needed.
+
+## What was verified
+
+Read-only `curl` probes only, no app config touched (no `.env.local`
+written yet, no test run against the real stack yet).
+
+## Next concrete step
+
+Wire `SUPABASE_URL=http://host.docker.internal:54321` and the anon/
+service-role keys from the `supabase start` output into
+`apps/api/.env.local` / `apps/worker/.env.local`, then run
+`pnpm --filter @eventops/api test` / `pnpm --filter @eventops/worker test`
+against the real stack per the remaining "Local Supabase stack" checklist
+items.
+
+---
+
 Date: 2026-07-10 (4)
 
 ## What changed

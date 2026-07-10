@@ -100,24 +100,30 @@ real local Supabase stack, to catch RLS/RPC/migration bugs mocks can't (e.g.
 the dropped-RPC bug found 2026-07-10). Needs to happen mostly on the host
 machine, not from inside this sandbox — this container has no Docker.
 
-- [ ] **Host**: install Supabase CLI, run `supabase start` from the repo
+- [x] **Host**: install Supabase CLI, run `supabase start` from the repo
       root (uses `supabase/config.toml` + `supabase/migrations/*.sql`
       already in the repo — applies all 13 migrations automatically).
       Confirm it prints working `API URL` / `anon key` / `service_role key`.
-- [ ] **Host**: confirm Supabase's Docker containers publish their ports on
+      (confirmed 2026-07-10: `host.docker.internal:54321/rest/v1/` serves a
+      live PostgREST OpenAPI schema with this repo's exact tables —
+      `users`/`tenants`/`events` incl. custom columns like
+      `idempotency_key`; `/auth/v1/health` responds with GoTrue `v2.188.1`)
+- [x] **Host**: confirm Supabase's Docker containers publish their ports on
       an interface reachable from other containers, not just host loopback
       (some Supabase CLI versions bind `127.0.0.1:<port>` by default, which
       other containers cannot reach). If containers can't reach it, this is
       the first thing to check.
-- [ ] **Repo**: add `--add-host=host.docker.internal:host-gateway` to
-      `runArgs` in `.devcontainer/devcontainer.json`, so this container can
-      resolve the host machine by a stable name instead of a bridge IP that
-      can change. (Small, capability-neutral change — doesn't touch
-      `--cap-drop`/`--security-opt`, just adds a hosts-file entry.)
-- [ ] **This container**: after rebuilding with that change, verify
-      reachability first, e.g. `curl http://host.docker.internal:54321` —
-      confirm it responds (even a 404/401 JSON body means the network path
-      works) before touching any app config.
+      (confirmed 2026-07-10: ports 54321 API/Kong, 54322 direct Postgres,
+      and 54323 Studio are all reachable from this container)
+- [x] ~~**Repo**: add `--add-host=host.docker.internal:host-gateway` to
+      `runArgs` in `.devcontainer/devcontainer.json`~~ — not needed.
+      Verified 2026-07-10 that `host.docker.internal` already resolves
+      from inside this container without any `devcontainer.json` change;
+      the platform provides it automatically.
+- [x] **This container**: verify reachability first, e.g.
+      `curl http://host.docker.internal:54321` — confirm it responds
+      before touching any app config.
+      (confirmed 2026-07-10, see above)
 - [ ] **This container**: set `SUPABASE_URL=http://host.docker.internal:54321`
       (not `127.0.0.1` — that resolves to the container itself) plus
       `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` from the
