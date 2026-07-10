@@ -1,5 +1,55 @@
 # Diary
 
+Date: 2026-07-10 (4)
+
+## What changed
+
+No code changes. Discussed running a real local Supabase stack instead of
+mocked `getSupabaseUser`/`getSupabaseAdmin` in tests -- motivated directly
+by the dropped-RPC dead-code bug found earlier today, which mocks could
+never have caught since they don't know the real DB schema.
+
+Investigated this sandbox's capabilities: no Docker, no Podman, no
+`/var/run/docker.sock` -- `supabase start` (Docker Compose under the hood)
+cannot run here regardless of CLI install. `.devcontainer/devcontainer.json`
+also deliberately drops capabilities (`--cap-drop=ALL`,
+`--security-opt=no-new-privileges:true`) and restricts networking
+(`--network=eventops-restricted`), so Docker-in-Docker inside this
+container isn't a good idea even if it were technically possible. Network
+env vars (`REMOTE_DEV_*`, WebStorm paths) suggest this container runs
+locally on the user's own machine via JetBrains Gateway remote dev, not a
+detached cloud sandbox -- so the user's host machine is very likely the
+same machine (or reachable from) this container, making a host-run Supabase
+stack a realistic option.
+
+Added a "Local Supabase stack" section to `CHECKLIST.md` with the concrete
+steps: run `supabase start` on the host, verify port binding is reachable
+from other containers (not just host loopback), add
+`--add-host=host.docker.internal:host-gateway` to this repo's
+`devcontainer.json` `runArgs`, verify connectivity before touching app
+config, then wire `SUPABASE_URL`/`SUPABASE_ANON_KEY`/
+`SUPABASE_SERVICE_ROLE_KEY` in `.env.local` files pointing at
+`host.docker.internal` instead of `127.0.0.1`.
+
+## What was verified
+
+Nothing code-level -- this was an environment/infra investigation, not a
+code change. Confirmed via direct checks in this session: no docker/podman
+binary, no docker socket, devcontainer.json's actual `runArgs`, and the
+exact `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` names
+required by `packages/config`'s typed env schemas (read the schema files
+directly, not any `.env*` file, per the secrets boundary in `CLAUDE.md`).
+
+## Next concrete step
+
+Steps in the new "Local Supabase stack" checklist section are mostly
+host-machine actions the user needs to perform themselves (installing the
+CLI, running `supabase start`, editing `.env.local`). This container's role
+starts at the `devcontainer.json` `--add-host` change and the connectivity
+check once the host side is up.
+
+---
+
 Date: 2026-07-10 (3)
 
 ## What changed

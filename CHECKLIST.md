@@ -92,3 +92,45 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
       needs a migration plus a PostgREST exposed-schemas config change and
       verification against a real Supabase stack, not doable in this
       sandbox — revisit separately)
+
+## Local Supabase stack (host machine, connected from this devcontainer)
+
+Goal: replace mocked `getSupabaseUser`/`getSupabaseAdmin` in tests/dev with a
+real local Supabase stack, to catch RLS/RPC/migration bugs mocks can't (e.g.
+the dropped-RPC bug found 2026-07-10). Needs to happen mostly on the host
+machine, not from inside this sandbox — this container has no Docker.
+
+- [ ] **Host**: install Supabase CLI, run `supabase start` from the repo
+      root (uses `supabase/config.toml` + `supabase/migrations/*.sql`
+      already in the repo — applies all 13 migrations automatically).
+      Confirm it prints working `API URL` / `anon key` / `service_role key`.
+- [ ] **Host**: confirm Supabase's Docker containers publish their ports on
+      an interface reachable from other containers, not just host loopback
+      (some Supabase CLI versions bind `127.0.0.1:<port>` by default, which
+      other containers cannot reach). If containers can't reach it, this is
+      the first thing to check.
+- [ ] **Repo**: add `--add-host=host.docker.internal:host-gateway` to
+      `runArgs` in `.devcontainer/devcontainer.json`, so this container can
+      resolve the host machine by a stable name instead of a bridge IP that
+      can change. (Small, capability-neutral change — doesn't touch
+      `--cap-drop`/`--security-opt`, just adds a hosts-file entry.)
+- [ ] **This container**: after rebuilding with that change, verify
+      reachability first, e.g. `curl http://host.docker.internal:54321` —
+      confirm it responds (even a 404/401 JSON body means the network path
+      works) before touching any app config.
+- [ ] **This container**: set `SUPABASE_URL=http://host.docker.internal:54321`
+      (not `127.0.0.1` — that resolves to the container itself) plus
+      `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` from the
+      `supabase start` output, in `apps/api/.env.local` and
+      `apps/worker/.env.local` (create from `.env.example`, never commit).
+- [ ] **This container**: run `pnpm --filter @eventops/api test` /
+      `pnpm --filter @eventops/worker test` against the real stack once
+      wired, expect some currently-mocked tests to need rework (mocks
+      assert exact Supabase query-builder call shapes; a real client won't
+      go through those mocks at all — decide per-suite whether to keep the
+      existing mocked unit tests *and* add a smaller real-stack integration
+      suite, or replace one with the other).
+- [ ] **This container**: once connectivity works, use the real stack to
+      finally do the manual browser click-through of the invitation
+      list/resend/revoke UI that's been deferred since 2026-07-06 (see
+      "Invitation resend + cleanup" section above).
