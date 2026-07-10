@@ -1,5 +1,40 @@
 # Diary
 
+Date: 2026-07-10
+
+## What changed
+
+Fixed the pre-existing `apps/web/tests/auth.store.test.ts` failure tracked in
+`CHECKLIST.md` ("surfaces backend hydration errors after Supabase login
+succeeds"). Root cause: `useAuthStore`'s `applySession`
+(`apps/web/src/stores/auth.ts`) has a silent-recovery path for a backend
+`Unauthorized` response on `/auth/me` -- it locally signs the user out and
+resets `status` to `'idle'` with no error, instead of surfacing the failure.
+That path was added for silent session restore on page load (a stale/invalid
+Supabase token should just quietly log the user out rather than show a
+confusing stuck error), but it was unconditionally reused inside `login()`
+too, so an `Unauthorized` right after an explicit login attempt was swallowed
+instead of shown to the user. Added an `options.silentOnUnauthorized` flag to
+`applySession` (default `true`, matching the existing silent-restore
+behavior for `initialize()`/`onAuthStateChange`), and pass `false` from the
+explicit `login()` call so it now sets `status: 'error'` and surfaces the
+backend's error message as before intended.
+
+## What was verified
+
+* `pnpm --filter @eventops/web test` -- 7/7 passing (both `auth.store.test.ts`
+  cases and the 5 `tenants.store.test.ts` cases).
+* `pnpm --filter @eventops/web typecheck` -- passes.
+
+## Next concrete step
+
+Remaining open checklist sections: "Event route gaps" (`GET
+/tenants/:tenantId/events/:eventId`, wiring the shared
+`listEventsQueryDtoSchema` through `validate()`), and "Later / lower
+priority".
+
+---
+
 Date: 2026-07-06 (7)
 
 ## What changed

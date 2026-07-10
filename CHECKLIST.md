@@ -14,11 +14,17 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
       invitation details for a valid token") — `accept_token_expires_at` is
       hardcoded to `2026-06-01`, now in the past; use a relative/future date
       (done 2026-07-06: replaced with a `Date.now() + 30 days` constant)
-- [ ] Fix `apps/web/tests/auth.store.test.ts` > "surfaces backend hydration
+- [x] Fix `apps/web/tests/auth.store.test.ts` > "surfaces backend hydration
       errors after Supabase login succeeds" — fails in isolation too
       (found 2026-07-06 while working on the invitation list UI, unrelated
       to that change; `store.status` comes back `'idle'` instead of
       `'error'`)
+      (done 2026-07-10: `applySession`'s silent-recovery path for a backend
+      `Unauthorized` response was meant for silent session restore on page
+      load, but it also fired during explicit `login()`, swallowing the
+      error. Added an `options.silentOnUnauthorized` flag, defaulting to
+      `true` for `initialize()`/auth-state-change restores, set to `false`
+      for the explicit `login()` call so it now surfaces the error)
 
 ## Invitation resend + cleanup
 
