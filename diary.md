@@ -1,5 +1,69 @@
 # Diary
 
+Date: 2026-07-10 (7)
+
+## What changed
+
+Built a real-Supabase integration test suite for `apps/api`, as a separate
+opt-in layer alongside the existing mocked unit tests (not a replacement --
+mocks stay fast/hermetic/CI-safe; the new suite catches what mocks
+structurally can't, like the dropped-RPC bug found earlier today).
+
+* `apps/api/tests/live/setup.ts`: loads the real root `.env` via `dotenv`
+  (same path resolution as `server.ts`), requires
+  `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY`, and
+  preflights `${SUPABASE_URL}/auth/v1/health` before any test runs --
+  throws a clear, actionable error pointing at the CHECKLIST section
+  instead of a cryptic connection failure deep in a test.
+* `apps/api/vitest.live.config.ts` + a new `test:live` script: completely
+  separate from the default `vitest.config.ts`/`test` script. Narrowed the
+  default config's `include` from `tests/**/*.test.ts` to
+  `tests/integration/**` + `tests/unit/**` specifically, so `pnpm test`
+  (and CI) can never accidentally pick up `tests/live/**` regardless of
+  file naming.
+* `apps/api/tests/live/support/live-client.ts`: shared helpers --
+  `registerAndSignIn` (hits the app's own `/auth/register`, then signs in
+  via the anon client to get a real bearer token), `uniqueEmail`/
+  `uniqueSlug` (timestamp+random, avoid collisions across runs),
+  `getInvitationAcceptToken` (reads the raw token straight out of
+  `invitation_email_jobs` via the service-role client, since no worker
+  runs in these tests to email it out), and `cleanupLiveTestData`
+  (deletes tenants first, then users -- `tenants.created_by_user_id` has
+  no cascade, so order matters).
+* Four live test files, 14 tests total, all passing against the real
+  local stack: `auth.live.test.ts` (5), `tenants.live.test.ts` (3,
+  including an RLS-boundary check), `invitations.live.test.ts` (3,
+  including the full invite -> resend -> accept round trip through real
+  RPCs and a 403 guard for non-owners), `events.live.test.ts` (3).
+* One assumption in the first draft of `tenants.live.test.ts` was wrong,
+  not a bug: expected `GET /tenants` to return flat tenant objects, but it
+  actually returns membership rows with a nested `tenant` field (by
+  design -- `tenant.service.ts`'s `listTenantsForUser` selects
+  `memberships` with an embedded `tenant:tenants(...)`, and the web
+  client's `toTenant()` already unwraps this). Fixed the test assertion,
+  not the API.
+* Verified cleanup actually works: a post-run query for any
+  `live-*@example.com` users or `*live*` tenant slugs returned 0 rows.
+
+## What was verified
+
+* `pnpm --filter @eventops/api test:live` -- 14/14 passing against the
+  real local Supabase stack (twice, individually per file and as a full
+  run).
+* `pnpm --filter @eventops/api test` -- still 75/75 (unaffected by the
+  `vitest.config.ts` include-pattern narrowing).
+* `pnpm --filter @eventops/api typecheck` -- passes, including the new
+  `tests/live/**` files.
+* Manual leftover-data check against the real stack -- 0 rows.
+
+## Next concrete step
+
+Only the manual browser click-through of the invitation list/resend/revoke
+UI remains from the "Local Supabase stack" checklist section -- now
+unblocked since a real backend is confirmed reachable and working.
+
+---
+
 Date: 2026-07-10 (6)
 
 ## What changed

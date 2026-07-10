@@ -143,13 +143,39 @@ machine, not from inside this sandbox — this container has no Docker.
       via `vi.mock`, so they never touch the real stack regardless of env
       vars. Stopped the dev server after the check; it is not left
       running.)
-- [ ] **This container**: decide the test strategy for the real stack —
-      mocks assert exact Supabase query-builder call shapes, so a real
-      client bypasses them entirely. Options: keep the existing mocked
-      unit tests as-is and add a *separate*, smaller real-stack
-      integration suite (e.g. `tests/integration-real/`, opt-in via an env
-      flag so CI/sandbox runs without a live Supabase still pass), or
-      replace some mocked suites outright. Not decided yet.
+- [x] **This container**: decide and implement the test strategy for the
+      real stack (done 2026-07-10). Chose: keep every existing mocked unit
+      test as-is, and add a fully separate opt-in suite under
+      `apps/api/tests/live/**/*.live.test.ts`, its own
+      `vitest.live.config.ts` + `tests/live/setup.ts` (loads the real
+      root `.env`, preflights `SUPABASE_URL` reachability and throws a
+      clear error if unreachable), and a `pnpm --filter @eventops/api
+      test:live` script that is never part of the default `test` script.
+      `apps/api/vitest.config.ts`'s `include` was narrowed to
+      `tests/integration/**` + `tests/unit/**` so the default run can
+      never accidentally pick up `tests/live/**`.
+      14 live tests across 4 files, all passing against the real stack:
+      - `auth.live.test.ts` (5): register, duplicate-email rejection,
+        `/auth/me` with a real token, 401 paths
+      - `tenants.live.test.ts` (3): `create_tenant_with_owner` /
+        `update_tenant` / `archive_tenant` RPCs, plus an RLS-boundary
+        check that a non-member can't see/patch another tenant
+      - `invitations.live.test.ts` (3): full
+        invite -> resend -> `accept_tenant_invitation_by_token` RPC round
+        trip (reads the real accept token straight out of
+        `invitation_email_jobs` since no worker runs in tests), a
+        `revoke_tenant_invitation` RPC path, and a 403 guard for a
+        non-owner member on invite/list/resend/revoke
+      - `events.live.test.ts` (3): RLS-backed create/list/get, a 404 for
+        a missing event id, and an RLS-boundary check for a non-member
+      Test data is namespaced with unique `live-*@example.com` emails and
+      `*-<timestamp>-<rand>` slugs, and cleaned up per file in `afterAll`
+      via a service-role client (tenants first, then users, matching FK
+      cascade order) — verified 0 leftover rows after a full run.
+      One real finding along the way (not a bug, a contract mismatch in
+      the test's own assumption): `GET /tenants` returns membership rows
+      with a nested `tenant` object, not flat tenant objects — the
+      mocked tests already knew this, the live test just had to match it.
 - [ ] **This container**: once connectivity works, use the real stack to
       finally do the manual browser click-through of the invitation
       list/resend/revoke UI that's been deferred since 2026-07-06 (see
