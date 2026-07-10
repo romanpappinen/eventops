@@ -56,12 +56,6 @@ export const tenantParamsSchema = z.object({
 
 export type TenantParams = z.infer<typeof tenantParamsSchema>;
 
-export const tenantInvitationParamsSchema = z.object({
-    invitationId: z.string().uuid(),
-});
-
-export type TenantInvitationParams = z.infer<typeof tenantInvitationParamsSchema>;
-
 export const tenantInvitationRouteParamsSchema = z.object({
     tenantId: z.string().uuid(),
     invitationId: z.string().uuid(),

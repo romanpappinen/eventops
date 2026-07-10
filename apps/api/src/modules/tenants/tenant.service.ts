@@ -8,7 +8,6 @@ import type {
     CreateTenantInput,
     InvitationAcceptLookup,
     InviteTenantMemberInput,
-    TenantInvitationParams,
     TenantInvitationRouteParams,
     UpdateTenantInput,
 } from './tenant.schemas.js';
@@ -624,46 +623,3 @@ export async function acceptTenantInvitationByTokenForUser(
     return membership;
 }
 
-export async function acceptTenantInvitationForUser(
-    authUser: NonNullable<AuthenticatedRequest['authUser']>,
-    authToken: string,
-    invitationId: TenantInvitationParams['invitationId']
-) {
-    await ensureUserProfile(authToken, {
-        id: authUser.id,
-        email: authUser.email ?? 'unknown@example.com',
-        fullName: authUser.fullName,
-        avatarUrl: authUser.avatarUrl,
-    });
-
-    const supabaseUser = getSupabaseUser(authToken);
-    const { data, error } = await supabaseUser.rpc('accept_tenant_invitation', {
-        p_invitation_id: invitationId,
-    });
-
-    if (error) {
-        const message = error.message?.toLowerCase() ?? '';
-
-        if (message.includes('invitation not found')) {
-            throw createTenantError('Invitation not found', 404);
-        }
-
-        if (message.includes('does not belong to authenticated user')) {
-            throw createTenantError('Forbidden', 403);
-        }
-
-        if (message.includes('archived tenants cannot accept invitations')) {
-            throw createTenantError('Tenant is archived', 409);
-        }
-
-        throw createTenantError('Invitation acceptance failed', 502);
-    }
-
-    const membership = Array.isArray(data) ? data[0] : data;
-
-    if (!membership) {
-        throw createTenantError('Invitation acceptance did not return a membership', 500);
-    }
-
-    return membership;
-}

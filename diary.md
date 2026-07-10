@@ -1,5 +1,51 @@
 # Diary
 
+Date: 2026-07-10 (3)
+
+## What changed
+
+Closed out most of the "Later / lower priority" checklist section.
+
+* Marked "Frontend invitation expiry/resend admin controls" and "Periodic
+  cleanup/maintenance worker" as done -- both were already shipped in the
+  2026-07-06 "Invitation resend + cleanup" work; the checklist just hadn't
+  been reconciled.
+* Documented canonical tenant RPC functions: added a "Canonical RPC
+  Reference" table to `docs/rls-rpc-plan.md` tracing every
+  `create_tenant_with_owner` / `create_tenant_invitation` /
+  `update_tenant` / `archive_tenant` / `revoke_tenant_invitation` /
+  `accept_tenant_invitation_by_token` signature across migrations `0003`
+  through `0013`, noting which are canonical and which were dropped.
+* While tracing that history, found a real bug: `tenant.service.ts`'s
+  `acceptTenantInvitationForUser` still called `.rpc('accept_tenant_invitation',
+  ...)`, but that Postgres function was dropped by migration `0011` in
+  favor of `accept_tenant_invitation_by_token`. Confirmed via grep across
+  `apps/api/src` and `apps/api/tests` that this JS function was never
+  imported by any controller, route, or test -- fully dead code left over
+  from the pre-token accept flow. Deleted it, plus the now-unused
+  `TenantInvitationParams` type and `tenantInvitationParamsSchema` in
+  `tenant.schemas.ts` (both existed only to serve that one dead function).
+* Left "moving `invitation_email_jobs` into a private schema" open --
+  scoped it as bigger than a simple refactor (needs a migration plus a
+  PostgREST exposed-schemas config change, and verification against a real
+  Supabase stack this sandbox doesn't have) and deferred it rather than
+  attempting it half-verified.
+
+## What was verified
+
+* `pnpm --filter @eventops/api typecheck` -- passes.
+* `pnpm --filter @eventops/api test` -- 75/75 passing (no test referenced
+  the deleted dead code, confirming it truly was unused).
+
+## Next concrete step
+
+Only "moving `invitation_email_jobs` into a private schema" remains open in
+`CHECKLIST.md`, explicitly deferred as a separate, larger piece of work.
+Otherwise the checklist is clear of ready-to-pick-up items -- next session
+should start by asking what new work the user wants to scope in.
+
+---
+
 Date: 2026-07-10 (2)
 
 ## What changed

@@ -71,10 +71,24 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
 
 ## Later / lower priority
 
-- [ ] Frontend invitation expiry/resend admin controls
-- [ ] Periodic cleanup/maintenance worker for expired invitations and stale
-      queue rows
+- [x] Frontend invitation expiry/resend admin controls (superseded by the
+      "Invitation resend + cleanup" section above — resend/revoke UI with
+      expired/failed visibility shipped 2026-07-06 in `TenantEditPage.vue`)
+- [x] Periodic cleanup/maintenance worker for expired invitations and stale
+      queue rows (superseded by the "Invitation resend + cleanup" section
+      above — hourly hygiene sweep shipped 2026-07-06 in
+      `apps/worker/src/invitation-cleanup-sweep.ts`)
+- [x] Document canonical tenant RPC functions across migration history
+      (`0003`/`0006`/`0007`/`0008`/`0009`/`0011`) so future work doesn't
+      reintroduce drift (done 2026-07-10: added a "Canonical RPC Reference"
+      table to `docs/rls-rpc-plan.md`. While tracing the history, found
+      `acceptTenantInvitationForUser` in `tenant.service.ts` still called
+      the `accept_tenant_invitation(uuid)` RPC dropped by migration `0011`
+      -- the function was unreferenced by any controller/route/test, so
+      deleted it along with the now-unused `TenantInvitationParams`
+      type/schema in `tenant.schemas.ts`)
 - [ ] Consider moving worker-only delivery state (`invitation_email_jobs`)
-      into a dedicated private schema for stricter isolation
-- [ ] Document canonical tenant RPC functions across migration history
-      (`0003`/`0006`/`0007`/`0009`) so future work doesn't reintroduce drift
+      into a dedicated private schema for stricter isolation (bigger scope:
+      needs a migration plus a PostgREST exposed-schemas config change and
+      verification against a real Supabase stack, not doable in this
+      sandbox — revisit separately)
