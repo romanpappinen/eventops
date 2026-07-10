@@ -27,6 +27,26 @@ export async function listEventsForTenant(
     return (data ?? []).map(normalizeEventRecord);
 }
 
+export async function getEventForTenant(authToken: string, tenantId: string, eventId: string) {
+    const supabaseUser = getSupabaseUser(authToken);
+    const { data, error } = await supabaseUser
+        .from('events')
+        .select(eventSelectFields)
+        .eq('tenant_id', tenantId)
+        .eq('id', eventId)
+        .maybeSingle();
+
+    if (error) {
+        throw new ApiError(502, 'Failed to load event');
+    }
+
+    if (!data) {
+        throw new ApiError(404, 'Event not found');
+    }
+
+    return normalizeEventRecord(data);
+}
+
 export async function createEventForTenant(
     authUser: NonNullable<AuthenticatedRequest['authUser']>,
     authToken: string,

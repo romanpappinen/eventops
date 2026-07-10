@@ -1,5 +1,56 @@
 # Diary
 
+Date: 2026-07-10 (2)
+
+## What changed
+
+Closed out the "Event route gaps" checklist section.
+
+* Added `GET /tenants/:tenantId/events/:eventId`: `getEventForTenant` in
+  `events.service.ts` (select by `tenant_id` + `id`, 404 if not found, 502 on
+  read failure), a `getEvent` controller, and the route in `events.routes.ts`
+  reusing the existing `eventParamsDtoSchema` for params validation.
+* Replaced the hand-written duplicate `limit` schema in
+  `events.controller.ts` with the shared `listEventsQueryDtoSchema`
+  (`packages/validation/src/request/events.ts`), wired through the
+  `validate()` middleware for the `GET /` route instead of a manual
+  `safeParse` inside the controller.
+* While wiring that middleware, hit the same class of bug fixed earlier this
+  session in `packages/config`: `packages/validation/src/` had three stale
+  committed CommonJS build artifacts (`index.js`, `request/events.js`,
+  `request/health.js`) that shadowed the `.ts` sources for the relative
+  `.js`-suffixed import in `events.routes.ts`. The stale `events.js`
+  predated `listEventsQueryDtoSchema` entirely, so the middleware crashed
+  with `Cannot read properties of undefined (reading 'safeParse')` (a plain
+  `TypeError`, not an `ApiError`, so it surfaced as a bare 500). Confirmed
+  via `git diff`/`git ls-files` they matched HEAD exactly and
+  `tsconfig.json` has `noEmit: true` (nothing regenerates them), then
+  deleted all three.
+* Added `apps/api/tests/integration/events-get.test.ts` covering 401, 400
+  (bad uuid), 404 (not a tenant member), 404 (event not found), 200
+  (normalized event body), and 502 (read failure).
+
+## What was verified
+
+* `pnpm --filter @eventops/api test` -- 75/75 passing (was 69/69; +6 new,
+  the existing `events-list.test.ts` suite unaffected by the middleware
+  change).
+* `pnpm --filter @eventops/api typecheck`,
+  `pnpm --filter @eventops/validation typecheck`,
+  `pnpm --filter @eventops/worker typecheck`,
+  `pnpm --filter @eventops/web typecheck` -- all pass.
+
+## Next concrete step
+
+Only the "Later / lower priority" checklist section remains (frontend
+invitation expiry/resend admin controls -- partially already covered by the
+invitation UI work, periodic cleanup worker -- already done via the hygiene
+sweep, moving `invitation_email_jobs` to a private schema, documenting
+canonical tenant RPCs across migration history). Worth re-reading that
+section against what's already shipped before picking a next task.
+
+---
+
 Date: 2026-07-10
 
 ## What changed

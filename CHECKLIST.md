@@ -57,11 +57,17 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
 
 ## Event route gaps
 
-- [ ] Implement `GET /tenants/:tenantId/events/:eventId`
-- [ ] Wire the shared `listEventsQueryDtoSchema`
+- [x] Implement `GET /tenants/:tenantId/events/:eventId` (done 2026-07-10:
+      `getEventForTenant` in `events.service.ts`, reuses the existing
+      `eventParamsDtoSchema`; 404 when not found, 502 on read failure)
+- [x] Wire the shared `listEventsQueryDtoSchema`
       (`packages/validation/src/request/events.ts`) through the `validate()`
       middleware instead of the local duplicate schema in
-      `events.controller.ts`
+      `events.controller.ts` (done 2026-07-10: also found and deleted three
+      stale committed `.js` build artifacts in `packages/validation/src/`
+      that shadowed the `.ts` sources for the relative import in
+      `events.routes.ts` -- same class of bug as the `packages/config`
+      cleanup earlier; `noEmit: true` means nothing regenerates them)
 
 ## Later / lower priority
 
