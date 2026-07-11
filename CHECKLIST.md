@@ -312,14 +312,40 @@ observability/deployment polish.
 
 ### 3. Observability basics (README Phase 6, ~5% done today)
 
-- [ ] Structured logging: replace ad hoc `console.log`/`console.error`
+- [x] Structured logging: replace ad hoc `console.log`/`console.error`
       calls across `apps/api`/`apps/worker` with a consistent structured
       logger (even a minimal JSON-line format would beat the current
       mix); needs a library/approach decision first (pino is the common
       lightweight choice, but worth confirming rather than assuming)
-- [ ] Request IDs: generate/propagate a request id through
+      (done 2026-07-11: new shared package `@eventops/logger`
+      (`createLogger(service)`) wraps `pino` -- pretty-printed only in
+      `NODE_ENV=development`, raw JSON otherwise, and `level: 'silent'`
+      in `NODE_ENV=test` so the 75+ mocked tests that call `createApp()`
+      don't pay any transport/worker-thread overhead. Used consistently
+      in both `apps/api` and `apps/worker` -- every `console.log`/
+      `console.error` in both apps' `src/` was replaced (found and fixed
+      via a repo-wide grep, confirmed 0 remain). Also removed 3 more
+      stale committed `.js` files shadowing `.ts` sources in
+      `packages/shared/src` while in there (same class of bug fixed
+      twice already this session in `packages/config`/`validation`;
+      swept the whole repo afterward, confirmed no more remain anywhere).
+- [x] Request IDs: generate/propagate a request id through
       `apps/api`'s middleware chain, include it in error responses and
       logs, so a single request's log lines are traceable
+      (done 2026-07-11: wired `pino-http` into `app.ts` with a
+      `genReqId` that honors an incoming `X-Request-Id` header or
+      generates a `crypto.randomUUID()`, and always echoes it back as a
+      response header. `errorHandler` now logs every error via
+      `req.log` (bound with the request id automatically by pino-http)
+      before responding. Deliberately did **not** add `requestId` to
+      JSON error response *bodies* -- roughly a dozen existing tests
+      assert exact response-body shape via `toEqual`, and the header
+      already gives full correlation capability without touching any of
+      them. Verified live: ran the real dev server, confirmed
+      auto-generated UUIDs, honored custom `X-Request-Id` headers,
+      pino-http's automatic per-request access log, and the
+      `errorHandler`'s explicit `WARN`/`ERROR` log entries all carry the
+      same id and actually appear in the log output.)
 - [ ] Out of scope for this pass: metrics-style endpoints and dashboard
       views (README lists these too, but they're a bigger, separate
       effort once basic logging/request IDs exist)

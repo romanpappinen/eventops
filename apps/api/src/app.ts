@@ -1,5 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
+import pinoHttp from 'pino-http';
+import { createLogger } from '@eventops/logger';
 import { getHealthMessage } from '@eventops/shared';
 import { errorHandler } from './middleware/error-handler.js';
 import { createRateLimiter } from './middleware/rate-limit.js';
@@ -10,6 +13,18 @@ import {tenantsRouter} from "./modules/tenants/tenants.routes";
 
 export function createApp() {
     const app = express();
+
+    app.use(
+        pinoHttp({
+            logger: createLogger('api'),
+            genReqId: (req, res) => {
+                const header = req.headers['x-request-id'];
+                const id = typeof header === 'string' && header.trim() ? header.trim() : randomUUID();
+                res.setHeader('X-Request-Id', id);
+                return id;
+            },
+        })
+    );
 
     app.use(cors());
     app.use(express.json());

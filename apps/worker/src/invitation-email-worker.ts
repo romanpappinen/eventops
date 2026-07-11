@@ -1,3 +1,4 @@
+import { createLogger } from '@eventops/logger';
 import { parseWorkerEnv } from '@eventops/config';
 import { sendTenantInvitationEmail } from './lib/resend.js';
 import {
@@ -10,6 +11,8 @@ import {
     markInvitationEmailJobSent,
     updateTenantInvitation,
 } from './lib/supabase-rest.js';
+
+const logger = createLogger('worker:invitation-email');
 
 export interface InvitationEmailJobRow {
     id: string;
@@ -153,7 +156,7 @@ async function processJob(job: InvitationEmailJobRow) {
 export async function runInvitationEmailWorker() {
     const env = parseWorkerEnv(process.env);
 
-    console.log('Invitation email worker started');
+    logger.info('Invitation email worker started');
 
     while (true) {
         try {
@@ -171,13 +174,14 @@ export async function runInvitationEmailWorker() {
                 } catch (error) {
                     const message =
                         error instanceof Error ? error.message : 'Invitation email processing failed';
+                    logger.warn({ jobId: job.id, invitationId: job.invitation_id, err: error }, message);
                     await markJobFailure(job, message);
                 }
             }
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : 'Invitation email polling failed';
-            console.error(message);
+            logger.error({ err: error }, message);
         }
 
         await sleep(env.INVITATION_EMAIL_POLL_INTERVAL_MS);

@@ -1,5 +1,87 @@
 # Diary
 
+Date: 2026-07-11 (7)
+
+## What changed
+
+Implemented Observability basics from the "Next priorities" list, as a
+shared pattern used consistently across both backend apps (per the user's
+explicit ask: "делаем паттерн под него и используем везде в апишках").
+
+* New package `packages/logger` (`@eventops/logger`): `createLogger(service)`
+  wraps `pino`. Pretty-printed via `pino-pretty` only in
+  `NODE_ENV=development`; raw JSON otherwise (production-ready, log
+  aggregator friendly); `level: 'silent'` in `NODE_ENV=test` so none of
+  the 75+ mocked tests that construct a real `createApp()` pay any
+  transport overhead. Verified all three modes manually before wiring it
+  anywhere: pretty+colored in dev, clean JSON in prod, silent in test.
+* `apps/api/src/app.ts`: wired `pino-http` in as the very first
+  middleware, with a `genReqId` that honors an incoming `X-Request-Id`
+  header (trusts an upstream load balancer / existing trace) or generates
+  a `crypto.randomUUID()`, always echoing it back as a response header.
+  This gives every request pino-http's automatic structured access log
+  (method, path, status, response time) plus a `req.log` child logger
+  already bound with that request's id, for free.
+* `apps/api/src/middleware/error-handler.ts`: now logs every error via
+  `req.log` (warn for `ApiError`/`ZodError`, error for unhandled) before
+  responding. Deliberately did *not* add the request id to JSON error
+  response *bodies* -- about a dozen existing tests assert exact body
+  shape via `toEqual`, and the `X-Request-Id` header already gives full
+  log correlation without touching any of them. Confirmed after the fact:
+  all 76 api tests still pass unchanged.
+* Replaced every `console.log`/`console.error` in `apps/api/src/server.ts`
+  and all three `apps/worker/src/*.ts` files with the shared logger,
+  structured with relevant fields (job id, invitation id, deleted count,
+  etc.) instead of string interpolation. Also removed two ad hoc debug
+  `console.log` lines in `server.ts` (pre-existing leftovers from the
+  original author debugging a dotenv path issue, unrelated to this
+  session's work) rather than converting them -- they weren't real
+  instrumentation.
+* While touching `packages/shared` to add `@eventops/logger` as a sibling
+  package, noticed it also had the exact same stale-compiled-JS-shadowing-
+  the-TS-source bug fixed twice already this session (`packages/config`,
+  `packages/validation`): `index.js`, `lib/health.js`, `types/api.js`,
+  byte-identical to HEAD, `main` field already points at `.ts`,
+  `noEmit: true`, unreferenced anywhere. Deleted them, then swept the
+  entire repo for any other `.ts`/`.js` sibling pairs -- found none
+  remaining anywhere.
+
+## What was verified
+
+* Ran the real `apps/api` dev server in `NODE_ENV=development` and hit it
+  with `curl`: confirmed auto-generated UUID request ids, confirmed a
+  client-supplied `X-Request-Id: my-custom-trace-id` header is honored
+  end to end (echoed back, appears in the log), confirmed pino-http's
+  automatic per-request access log appears with full request/response
+  detail, and confirmed the `errorHandler`'s explicit `WARN`-level log
+  entry appears for a validation error (`POST /auth/register` with an
+  empty body), all tagged with the same request id. Stopped the dev
+  server afterward.
+* `pnpm --filter @eventops/api test` -- 76/76 (unchanged from before this
+  work -- confirms the response-body-shape decision above didn't disturb
+  anything). `pnpm --filter @eventops/worker test` -- 6/6 (1 test needed
+  updating: `invitation-cleanup-sweep.test.ts`'s "does not throw when the
+  delete call fails" spied on `console.error` directly; now mocks
+  `@eventops/logger` and asserts on the logger call instead).
+* `pnpm typecheck` (turbo, all 7 packages including the new
+  `@eventops/logger`) -- clean.
+* `pnpm --filter @eventops/api test:live` -- 15/15 against the real local
+  Supabase stack (unaffected by this change, run as a sanity check anyway
+  since the real server path changed). `pnpm --filter @eventops/web
+  test:e2e` -- passed, real browser through the real (now pino-http-wired)
+  api server.
+* Cleaned up test data left behind by the live/E2E verification runs.
+
+## Next concrete step
+
+Metrics-style endpoints and dashboard views (the rest of README Phase 6)
+are deliberately out of scope for this pass -- bigger, separate effort.
+Remaining open items on the "Next priorities" list: tenant quotas
+(deferred, needs scoping) and Deployment prep (Phase 7, capped at
+preparation only per CLAUDE.md's deploy boundary).
+
+---
+
 Date: 2026-07-11 (6)
 
 ## What changed

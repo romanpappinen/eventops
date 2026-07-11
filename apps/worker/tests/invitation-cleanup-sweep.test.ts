@@ -1,11 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { deleteTerminalInvitationEmailJobsOlderThan } = vi.hoisted(() => ({
+const { deleteTerminalInvitationEmailJobsOlderThan, logError } = vi.hoisted(() => ({
     deleteTerminalInvitationEmailJobsOlderThan: vi.fn(),
+    logError: vi.fn(),
 }));
 
 vi.mock('../src/lib/supabase-rest.js', () => ({
     deleteTerminalInvitationEmailJobsOlderThan,
+}));
+
+vi.mock('@eventops/logger', () => ({
+    createLogger: () => ({
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: logError,
+        debug: vi.fn(),
+    }),
 }));
 
 import {
@@ -42,11 +52,8 @@ describe('runInvitationCleanupSweepOnce', () => {
 describe('runInvitationCleanupSweepTick', () => {
     it('does not throw when the delete call fails', async () => {
         deleteTerminalInvitationEmailJobsOlderThan.mockRejectedValue(new Error('boom'));
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
         await expect(runInvitationCleanupSweepTick()).resolves.toBeUndefined();
-        expect(errorSpy).toHaveBeenCalledWith('boom');
-
-        errorSpy.mockRestore();
+        expect(logError).toHaveBeenCalledWith({ err: expect.any(Error) }, 'boom');
     });
 });

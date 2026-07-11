@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@eventops/config": "workspace:*",
+    "@eventops/logger": "workspace:*",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {

@@ -1,5 +1,8 @@
+import { createLogger } from '@eventops/logger';
 import { parseWorkerEnv } from '@eventops/config';
 import { deleteTerminalInvitationEmailJobsOlderThan } from './lib/supabase-rest.js';
+
+const logger = createLogger('worker:invitation-cleanup-sweep');
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -23,17 +26,17 @@ export async function runInvitationCleanupSweepTick() {
         const deletedCount = await runInvitationCleanupSweepOnce();
 
         if (deletedCount > 0) {
-            console.log(`Invitation cleanup sweep removed ${deletedCount} terminal job(s)`);
+            logger.info({ deletedCount }, 'Invitation cleanup sweep removed terminal job(s)');
         }
     } catch (error) {
         const message =
             error instanceof Error ? error.message : 'Invitation cleanup sweep failed';
-        console.error(message);
+        logger.error({ err: error }, message);
     }
 }
 
 export async function runInvitationCleanupSweep() {
-    console.log('Invitation cleanup sweep started');
+    logger.info('Invitation cleanup sweep started');
 
     while (true) {
         await runInvitationCleanupSweepTick();
