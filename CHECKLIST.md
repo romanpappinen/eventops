@@ -176,7 +176,34 @@ machine, not from inside this sandbox — this container has no Docker.
       the test's own assumption): `GET /tenants` returns membership rows
       with a nested `tenant` object, not flat tenant objects — the
       mocked tests already knew this, the live test just had to match it.
-- [ ] **This container**: once connectivity works, use the real stack to
+- [x] **This container**: once connectivity works, use the real stack to
       finally do the manual browser click-through of the invitation
       list/resend/revoke UI that's been deferred since 2026-07-06 (see
       "Invitation resend + cleanup" section above).
+      (done 2026-07-11: this sandbox has no browser at all and no root to
+      install one via `apt`/`playwright install-deps` -- worked around it
+      by adding `@playwright/test` as a real devDependency of
+      `apps/web` (`pnpm --filter @eventops/web test:e2e`) instead of a
+      one-off throwaway check, so the click-through is now a reusable,
+      repeatable automated E2E test, not a manual one-time click session.
+      `apps/web/playwright.config.ts` starts both the real `apps/api` dev
+      server and the `apps/web` dev server via `webServer`, against the
+      real local Supabase stack (no mocks anywhere in this path).
+      `apps/web/e2e/invitation-flow.spec.ts` drives a real Chromium
+      browser through: register -> login -> create tenant -> invite a
+      member -> resend -> revoke, asserting on-page feedback text and the
+      invitations table's Status column after each action, with
+      screenshots at each checkpoint. Passed twice in a row (not flaky).
+      Found and fixed one real config bug along the way (not a product
+      bug): `apps/web/.env.local`'s `VITE_SUPABASE_URL` was
+      `http://127.0.0.1:54321` -- Vite bakes `VITE_*` vars in at dev-server
+      start time, and `127.0.0.1` from inside a browser running in this
+      container points at the container itself, not the host running
+      Supabase. Fixed to `http://host.docker.internal:54321` (same fix
+      class as the API's env var, done manually by the user since
+      `.env.local` is off-limits for me to edit per CLAUDE.md). Test data
+      created by both E2E runs was cleaned up from the real DB via the
+      service-role client afterward. Running this locally requires a real
+      browser: `pnpm --filter @eventops/web exec playwright install
+      --with-deps chromium` once, then `pnpm --filter @eventops/web
+      test:e2e`.

@@ -1,5 +1,79 @@
 # Diary
 
+Date: 2026-07-11
+
+## What changed
+
+Closed out the last open item from the "Local Supabase stack" checklist
+section: the deferred manual browser click-through of the invitation
+list/resend/revoke UI. Chose to build it as a real, reusable Playwright E2E
+suite (added as a devDependency) rather than a one-off manual session,
+since the user wanted it to be rerunnable going forward.
+
+* Installing a browser in this sandbox hit the same class of hard limit as
+  Docker earlier: no root/sudo (`no-new-privileges` blocks it), so
+  `playwright install-deps` can't run `apt-get`. Also discovered mid-session
+  that this devcontainer had been transparently rebuilt (hostname changed
+  from `c69792e5db2e` to `7514b71937cf`), wiping the previously-downloaded
+  Chromium binary -- explained this to the user rather than silently
+  retrying. The user installed `playwright install --with-deps chromium`
+  themselves in a live terminal attached to the same container, which has
+  root, and it worked from there on.
+* `apps/web/playwright.config.ts`: starts both `apps/api` and `apps/web`
+  dev servers via `webServer` (array config, `cwd` set to the repo root so
+  `pnpm --filter` resolves correctly), against the real local Supabase --
+  no mocks anywhere in this path.
+* `apps/web/e2e/invitation-flow.spec.ts`: drives a real Chromium browser
+  through register -> login -> create tenant -> invite -> resend -> revoke,
+  asserting on-page feedback text and the invitations table's Status
+  column, with a screenshot at each checkpoint (sent to the user as visual
+  proof). Passed twice in a row.
+* Found one real, user-facing config bug while getting the first run
+  green (not a product code bug): `apps/web/.env.local`'s
+  `VITE_SUPABASE_URL` was `http://127.0.0.1:54321`. Unlike the API (which
+  reads `SUPABASE_URL` from `process.env` at request time via `dotenv`),
+  Vite bakes `VITE_*` env vars into the bundle at dev-server start time,
+  and `127.0.0.1` from inside a browser running in this container points
+  at the container itself, not the host machine running Supabase. Caught
+  it by listening for the actual failed network request in a throwaway
+  Playwright probe script (`net::ERR_CONNECTION_REFUSED` on
+  `http://127.0.0.1:54321/auth/v1/token`) rather than guessing. Could not
+  fix it myself -- `.env.local` is off-limits to read or edit per
+  CLAUDE.md's secrets boundary -- so reported the exact line to change and
+  the user fixed it (`http://host.docker.internal:54321`, same class of
+  fix as the API's env var).
+* Cleaned up all real rows created in the local Supabase DB by both E2E
+  runs (3 users, 2 tenants across two runs) via a throwaway service-role
+  script, same tenants-then-users order as the API live-test cleanup
+  helper.
+* Added `test-results/`, `playwright-report/`, `e2e-report/`,
+  `e2e-artifacts/`, `blob-report/` to `.gitignore` -- these are Playwright's
+  generated output, never meant to be committed.
+
+## What was verified
+
+* `apps/web/e2e/invitation-flow.spec.ts` passed twice in a row against the
+  real local Supabase stack, real `apps/api`, real `apps/web` dev server,
+  real Chromium.
+* `pnpm --filter @eventops/web test` (7/7) and
+  `pnpm --filter @eventops/web typecheck` -- both still pass; the `e2e/`
+  directory is outside `tsconfig.json`'s `include: ["src"]`, so it isn't
+  part of the regular typecheck (Playwright type-checks it internally when
+  running).
+* Confirmed 0 leftover test rows in the real DB after cleanup.
+
+## Next concrete step
+
+The entire "Local Supabase stack" checklist section is now closed. No
+specific next item queued -- next session should ask the user what to
+scope next (candidates already on the table: the deferred private-schema
+migration for `invitation_email_jobs`, or picking up a fresh slice of the
+README's "Development Roadmap", e.g. Observability or Deployment, which
+are both currently near-0% per the completion assessment discussed this
+session).
+
+---
+
 Date: 2026-07-10 (7)
 
 ## What changed

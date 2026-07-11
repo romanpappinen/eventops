@@ -1,7 +1,9 @@
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 
-const repoRoot = path.resolve(__dirname, '../..')
+const dirname = path.dirname(fileURLToPath(import.meta.url))
+const repoRoot = path.resolve(dirname, '../..')
 
 export default defineConfig({
   testDir: './e2e',

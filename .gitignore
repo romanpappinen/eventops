@@ -5,6 +5,13 @@ node_modules
 dist
 coverage
 
+# playwright
+test-results
+playwright-report
+e2e-report
+e2e-artifacts
+blob-report
+
 # env
 .env
 .env.local
