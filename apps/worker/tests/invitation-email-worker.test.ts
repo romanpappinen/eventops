@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { updateInvitationEmailJob, updateTenantInvitation } = vi.hoisted(() => ({
-    updateInvitationEmailJob: vi.fn().mockResolvedValue(undefined),
+const { markInvitationEmailJobSent, markInvitationEmailJobFailed, updateTenantInvitation } = vi.hoisted(() => ({
+    markInvitationEmailJobSent: vi.fn().mockResolvedValue(undefined),
+    markInvitationEmailJobFailed: vi.fn().mockResolvedValue(undefined),
     updateTenantInvitation: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../src/lib/supabase-rest.js', () => ({
-    updateInvitationEmailJob,
+    markInvitationEmailJobSent,
+    markInvitationEmailJobFailed,
     updateTenantInvitation,
 }));
 
@@ -26,14 +28,13 @@ describe('markJobFailure', () => {
     it('keeps the job pending and pushes scheduled_at out when attempts have not been exhausted', async () => {
         await markJobFailure({ ...baseJob, attempts: 2 }, 'SMTP timeout');
 
-        expect(updateInvitationEmailJob).toHaveBeenCalledWith(
+        expect(markInvitationEmailJobFailed).toHaveBeenCalledWith(
             'job-1',
             expect.objectContaining({
                 status: 'pending',
                 attempts: 3,
-                accept_token: 'plaintext-token',
-                last_error: 'SMTP timeout',
-                processed_at: null,
+                lastError: 'SMTP timeout',
+                terminal: false,
             })
         );
     });
@@ -41,14 +42,13 @@ describe('markJobFailure', () => {
     it('marks the job failed and clears the accept token once attempts are exhausted', async () => {
         await markJobFailure({ ...baseJob, attempts: 4 }, 'SMTP timeout');
 
-        expect(updateInvitationEmailJob).toHaveBeenCalledWith(
+        expect(markInvitationEmailJobFailed).toHaveBeenCalledWith(
             'job-1',
             expect.objectContaining({
                 status: 'failed',
                 attempts: 5,
-                accept_token: null,
-                last_error: 'SMTP timeout',
-                processed_at: expect.any(String),
+                lastError: 'SMTP timeout',
+                terminal: true,
             })
         );
         expect(updateTenantInvitation).toHaveBeenCalledWith(
@@ -65,16 +65,7 @@ describe('markJobSuccess', () => {
     it('marks the job sent and clears the accept token', async () => {
         await markJobSuccess({ ...baseJob, attempts: 0 }, 'msg_123');
 
-        expect(updateInvitationEmailJob).toHaveBeenCalledWith(
-            'job-1',
-            expect.objectContaining({
-                status: 'sent',
-                attempts: 1,
-                accept_token: null,
-                last_error: null,
-                processed_at: expect.any(String),
-            })
-        );
+        expect(markInvitationEmailJobSent).toHaveBeenCalledWith('job-1', 1);
         expect(updateTenantInvitation).toHaveBeenCalledWith(
             'invitation-1',
             expect.objectContaining({

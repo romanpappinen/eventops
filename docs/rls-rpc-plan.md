@@ -398,6 +398,7 @@ Current route status:
 4. migrate `GET /tenants/:tenantId`
 5. keep `POST /tenants` on RPC, but move off service-role-by-default if the RPC can be called safely with user context
 6. decide and implement RPC strategy for tenant update and archive
+7. review memberships and invitations as explicit RPC-managed write flows
 
 ---
 
@@ -429,4 +430,43 @@ tenant_invitations ... WHERE status = 'pending'`) done in app code via
 gated by `requireTenantAccess({ minimumRole: 'owner' })` at the HTTP layer.
 It does not touch `memberships` or any other table, so it does not need the
 multi-table security-definer treatment the RPCs above exist for.
-7. review memberships and invitations as explicit RPC-managed write flows
+
+---
+
+## `invitation_email_jobs` Private-Schema RPCs (as of migration `0015`)
+
+`invitation_email_jobs` was moved from `public` to a dedicated `private`
+schema by migration `0014` (`alter table public.invitation_email_jobs set
+schema private`). `private` is never in `supabase/config.toml`'s `[api]
+schemas` list, so nothing in it is reachable via PostgREST's `/rest/v1/`
+table routes at all — not even with the service-role key. The *only* way to
+read or write it is through the seven `security definer` functions below,
+all living in `public` (so they're callable via the ordinary
+`/rest/v1/rpc/<name>` route) but with `EXECUTE` revoked from `anon` and
+`authenticated` (migration `0015` — see note below on why `0014`'s `revoke
+... from public` alone wasn't enough). Only `service_role` can call them,
+which is by design: this table is worker/admin-only state, never touched
+by an end user's own session.
+
+| Function | Signature | Used by |
+| --- | --- | --- |
+| `enqueue_invitation_email_job` | `(p_invitation_id uuid, p_accept_token text)` → `void` | `apps/api`'s `tenant.service.ts` (`enqueueInvitationEmail`, called on invite and on resend) |
+| `list_pending_invitation_email_jobs` | `(p_limit integer)` → `setof (id, invitation_id, attempts, accept_token)` | `apps/worker`'s `supabase-rest.ts` (`listPendingInvitationEmailJobs`) |
+| `claim_invitation_email_job` | `(p_job_id uuid)` → `setof (id, invitation_id, attempts)` | `apps/worker`'s `supabase-rest.ts` (`claimInvitationEmailJob`) — optimistic claim, same `WHERE status = 'pending'` guard as before the migration |
+| `mark_invitation_email_job_sent` | `(p_job_id uuid, p_attempts integer)` → `void` | `apps/worker`'s `invitation-email-worker.ts` (`markJobSuccess`) |
+| `mark_invitation_email_job_failed` | `(p_job_id uuid, p_status text, p_attempts integer, p_last_error text, p_scheduled_at timestamptz, p_terminal boolean)` → `void` | `apps/worker`'s `invitation-email-worker.ts` (`markJobFailure`) — `p_terminal` decides whether to clear `accept_token`/set `processed_at`, computed in app code from `INVITATION_EMAIL_MAX_ATTEMPTS`, same as before |
+| `delete_terminal_invitation_email_jobs_older_than` | `(p_cutoff timestamptz)` → `integer` (deleted row count) | `apps/worker`'s `invitation-cleanup-sweep.ts` hourly sweep |
+| `get_invitation_email_job_accept_token` | `(p_invitation_id uuid)` → `text` | test-only: `apps/api/tests/live/support/live-client.ts` reads the raw accept token no worker is running to email out during live/E2E test runs |
+
+Why two migrations instead of one: `0014` did `revoke execute ... from
+public`, which is the textbook way to remove the default "every role gets
+EXECUTE on new functions" grant — but this Supabase project also has
+default privileges in the `public` schema that separately grant `EXECUTE`
+to `anon`/`authenticated` on new functions, independent of the `PUBLIC`
+pseudo-role. Revoking from `PUBLIC` alone left `anon`/`authenticated` still
+able to call these worker-only functions (confirmed via a live probe: an
+anon-key RPC call returned `200 []` instead of a permission error). `0015`
+explicitly revokes from `anon, authenticated` too. If you add a new
+`security definer` function anywhere in this project that should not be
+callable by end users, revoke from `anon, authenticated` explicitly —
+revoking from `PUBLIC` is not sufficient in this project.

@@ -88,24 +88,24 @@ export async function signIn(email: string, password: string) {
     return data.session.access_token;
 }
 
-/** Fetches the raw invitation accept token the worker would normally email out,
- *  directly from invitation_email_jobs, since no worker runs in these tests. */
+/** Fetches the raw invitation accept token the worker would normally email out.
+ *  invitation_email_jobs lives in a private schema not exposed via PostgREST,
+ *  so this goes through the same RPC the worker itself would use, since no
+ *  worker runs in these tests. */
 export async function getInvitationAcceptToken(invitationId: string) {
-    const { data, error } = await getServiceRoleClient()
-        .from('invitation_email_jobs')
-        .select('accept_token')
-        .eq('invitation_id', invitationId)
-        .maybeSingle();
+    const { data, error } = await getServiceRoleClient().rpc('get_invitation_email_job_accept_token', {
+        p_invitation_id: invitationId,
+    });
 
     if (error) {
         throw new Error(`Failed to read invitation accept token: ${error.message}`);
     }
 
-    if (!data?.accept_token) {
+    if (!data) {
         throw new Error(`No accept token queued for invitation ${invitationId}`);
     }
 
-    return data.accept_token as string;
+    return data as string;
 }
 
 /** Deletes tenants first (cascades memberships/invitations/events), then users

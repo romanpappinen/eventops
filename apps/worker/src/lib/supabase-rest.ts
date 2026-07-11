@@ -46,41 +46,23 @@ async function postgrestRequest<T>(table: string, options: PostgrestQueryOptions
 }
 
 export async function listPendingInvitationEmailJobs(limit: number) {
-    return (await postgrestRequest<
-        Array<{ id: string; invitation_id: string; attempts: number; accept_token: string | null }>
-    >(
-        'invitation_email_jobs',
-        {
-            query: {
-                status: 'eq.pending',
-                scheduled_at: `lte.${new Date().toISOString()}`,
-                order: 'scheduled_at.asc',
-                limit: String(limit),
-            },
-            select: 'id,invitation_id,attempts,accept_token',
-        }
-    )) ?? [];
+    return (
+        (await postgrestRequest<
+            Array<{ id: string; invitation_id: string; attempts: number; accept_token: string | null }>
+        >('rpc/list_pending_invitation_email_jobs', {
+            method: 'POST',
+            body: { p_limit: limit },
+        })) ?? []
+    );
 }
 
 export async function claimInvitationEmailJob(jobId: string) {
     const rows =
-        (await postgrestRequest<
-            Array<{ id: string; invitation_id: string; attempts: number }>
-        >(
-            'invitation_email_jobs',
+        (await postgrestRequest<Array<{ id: string; invitation_id: string; attempts: number }>>(
+            'rpc/claim_invitation_email_job',
             {
-                method: 'PATCH',
-                body: {
-                    status: 'processing',
-                    accept_token: null,
-                    updated_at: new Date().toISOString(),
-                },
-                query: {
-                    id: `eq.${jobId}`,
-                    status: 'eq.pending',
-                },
-                select: 'id,invitation_id,attempts',
-                prefer: 'return=representation',
+                method: 'POST',
+                body: { p_job_id: jobId },
             }
         )) ?? [];
 
@@ -147,32 +129,43 @@ export async function getUserById(userId: string) {
     return rows[0] ?? null;
 }
 
-export async function updateInvitationEmailJob(
+export async function markInvitationEmailJobSent(jobId: string, attempts: number) {
+    await postgrestRequest('rpc/mark_invitation_email_job_sent', {
+        method: 'POST',
+        body: { p_job_id: jobId, p_attempts: attempts },
+    });
+}
+
+export async function markInvitationEmailJobFailed(
     jobId: string,
-    payload: Record<string, unknown>
+    params: {
+        status: 'pending' | 'failed';
+        attempts: number;
+        lastError: string;
+        scheduledAt: string;
+        terminal: boolean;
+    }
 ) {
-    await postgrestRequest('invitation_email_jobs', {
-        method: 'PATCH',
-        body: payload,
-        query: {
-            id: `eq.${jobId}`,
+    await postgrestRequest('rpc/mark_invitation_email_job_failed', {
+        method: 'POST',
+        body: {
+            p_job_id: jobId,
+            p_status: params.status,
+            p_attempts: params.attempts,
+            p_last_error: params.lastError,
+            p_scheduled_at: params.scheduledAt,
+            p_terminal: params.terminal,
         },
     });
 }
 
 export async function deleteTerminalInvitationEmailJobsOlderThan(cutoffIso: string) {
-    const rows =
-        (await postgrestRequest<Array<{ id: string }>>('invitation_email_jobs', {
-            method: 'DELETE',
-            query: {
-                status: 'in.(sent,failed)',
-                processed_at: `lt.${cutoffIso}`,
-            },
-            select: 'id',
-            prefer: 'return=representation',
-        })) ?? [];
+    const deletedCount = await postgrestRequest<number>('rpc/delete_terminal_invitation_email_jobs_older_than', {
+        method: 'POST',
+        body: { p_cutoff: cutoffIso },
+    });
 
-    return rows.length;
+    return deletedCount ?? 0;
 }
 
 export async function updateTenantInvitation(invitationId: string, payload: Record<string, unknown>) {

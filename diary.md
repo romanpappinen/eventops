@@ -1,5 +1,99 @@
 # Diary
 
+Date: 2026-07-11 (2)
+
+## What changed
+
+Closed the last open checklist item: moved `invitation_email_jobs` into a
+dedicated private schema, applied for real against the running local
+Supabase stack (not just written and left unverified).
+
+* Migration `0014_invitation_email_jobs_private_schema.sql`: creates a
+  `private` schema, moves the table into it
+  (`alter table public.invitation_email_jobs set schema private`), and adds
+  seven `security definer` RPC functions in `public` that are now the only
+  way to touch it: `enqueue_invitation_email_job`,
+  `list_pending_invitation_email_jobs`, `claim_invitation_email_job`,
+  `mark_invitation_email_job_sent`, `mark_invitation_email_job_failed`,
+  `delete_terminal_invitation_email_jobs_older_than`, and a test-only
+  `get_invitation_email_job_accept_token`. Deliberately did *not* add
+  `private` to `supabase/config.toml`'s exposed schemas -- that would have
+  made the "isolation" cosmetic (still reachable via REST, just a
+  different URL). Going through `public`-schema RPCs only, with `private`
+  never exposed at all, is a real isolation boundary.
+* Migration `0015_invitation_email_job_rpc_grants_fix.sql`: found while
+  verifying against the real stack that `0014`'s `revoke execute ... from
+  public` wasn't enough -- this Supabase project has default privileges in
+  the `public` schema that separately grant `EXECUTE` to `anon`/
+  `authenticated` on new functions, independent of the `PUBLIC`
+  pseudo-role. An anon-key RPC call succeeded (`200 []`) when it should
+  have been rejected. `0015` explicitly revokes from `anon, authenticated`
+  too; reverified afterward -- anon now gets `401 permission denied`,
+  service_role still works.
+* Updated `apps/api/src/modules/tenants/tenant.service.ts`'s
+  `enqueueInvitationEmail` to call the RPC instead of
+  `.from('invitation_email_jobs').upsert(...)`.
+* Updated all four table-touching helpers in
+  `apps/worker/src/lib/supabase-rest.ts` to call the matching RPCs via the
+  existing `postgrestRequest` helper (target path becomes `rpc/<name>`
+  instead of a table name -- no new HTTP mechanism needed).
+  `updateInvitationEmailJob`'s single generic payload-object function was
+  split into two typed ones, `markInvitationEmailJobSent`/
+  `markInvitationEmailJobFailed`, matching the new RPC signatures;
+  `invitation-email-worker.ts`'s `markJobSuccess`/`markJobFailure` updated
+  to match.
+* Updated the mocked test suites: `tenant-invitations.test.ts` now mocks
+  `getSupabaseAdmin().rpc` (`adminRpc`) instead of asserting on
+  `.from('invitation_email_jobs').upsert(...)`;
+  `invitation-email-worker.test.ts` rewritten around the two new typed
+  helpers instead of the old generic one.
+  `invitation-cleanup-sweep.test.ts` needed no changes -- it mocks
+  `deleteTerminalInvitationEmailJobsOlderThan` at the function-signature
+  level, which didn't change.
+* Updated `apps/api/tests/live/support/live-client.ts`'s
+  `getInvitationAcceptToken` to call the new RPC instead of
+  `.from('invitation_email_jobs').select(...)`, since that's no longer
+  reachable at all now that the table isn't exposed.
+
+## What was verified
+
+* Applied both migrations directly to the real local Supabase database via
+  `supabase migration up --db-url ...` (using the CLI binary directly,
+  since `pnpm exec supabase` doesn't work in this sandbox --
+  `PGSSLMODE=disable` and the IPv4 address were both required workarounds:
+  the Go pgx driver tried IPv6 first over `host.docker.internal`, which is
+  unreachable from this container, and then tried TLS, which the local
+  dev Postgres doesn't speak).
+* `pnpm --filter @eventops/api test` -- 75/75. `pnpm --filter
+  @eventops/worker test` -- 6/6. `pnpm --filter @eventops/api typecheck`
+  and `pnpm --filter @eventops/worker typecheck` -- both clean.
+* `pnpm --filter @eventops/api test:live` -- 14/14 against the real,
+  already-migrated database (this exercises `enqueue_invitation_email_job`
+  for real through the actual invite/resend flows).
+* `pnpm --filter @eventops/web test:e2e` -- passed, real browser against
+  the real migrated stack.
+* Directly hand-verified every worker-side RPC
+  (enqueue/list-pending/claim/mark-sent/delete-terminal-older-than)
+  against the real database with a real invitation created through the
+  real `create_tenant_with_owner`/`create_tenant_invitation` RPCs (not
+  mocked) -- all worked as designed.
+* Confirmed `public.invitation_email_jobs` is gone from PostgREST
+  (`404 PGRST205`), confirmed anon-key RPC calls are rejected
+  (`401`/`42501 permission denied`), confirmed service-role RPC calls
+  still work.
+* Found and cleaned up stray test data (1 tenant, 2 users) left behind by
+  earlier test runs today, unrelated to this migration -- confirmed
+  `private.invitation_email_jobs` is empty afterward.
+
+## Next concrete step
+
+`CHECKLIST.md` has no open items left. Next session should ask the user
+what to scope next -- candidates already discussed: a CI pipeline
+(currently 0%), event ingestion idempotency/quotas, or a fresh
+Observability/Deployment slice from the README roadmap.
+
+---
+
 Date: 2026-07-11
 
 ## What changed

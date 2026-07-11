@@ -87,11 +87,32 @@ history + README "Development Roadmap" + the 2026-07-04 API review.
       -- the function was unreferenced by any controller/route/test, so
       deleted it along with the now-unused `TenantInvitationParams`
       type/schema in `tenant.schemas.ts`)
-- [ ] Consider moving worker-only delivery state (`invitation_email_jobs`)
-      into a dedicated private schema for stricter isolation (bigger scope:
-      needs a migration plus a PostgREST exposed-schemas config change and
-      verification against a real Supabase stack, not doable in this
-      sandbox — revisit separately)
+- [x] Consider moving worker-only delivery state (`invitation_email_jobs`)
+      into a dedicated private schema for stricter isolation (done
+      2026-07-11, applied directly to the real local Supabase stack via
+      `supabase migration up` -- see `docs/rls-rpc-plan.md`'s
+      "`invitation_email_jobs` Private-Schema RPCs" section for full
+      details). Migration `0014` moves the table to a `private` schema
+      never listed in PostgREST's exposed schemas (no config change needed
+      -- deliberately did *not* expose `private` via REST, which would
+      have been only a cosmetic improvement; instead all access goes
+      through 7 narrow `security definer` RPCs in `public`). Migration
+      `0015` fixes a real gap found while verifying against the live
+      stack: revoking `EXECUTE` from `PUBLIC` alone left `anon`/
+      `authenticated` still able to call the new RPCs (this Supabase
+      project has separate default privileges granting them EXECUTE on
+      new `public`-schema functions) -- confirmed via a live probe
+      (anon-key call returned `200 []` instead of a permission error
+      before the fix, `401 permission denied` after). Updated
+      `apps/api`'s `enqueueInvitationEmail` and all four of
+      `apps/worker/src/lib/supabase-rest.ts`'s table-based helpers to call
+      the new RPCs instead of `.from('invitation_email_jobs')`. All 75 api
+      + 6 worker mocked tests, all 14 live tests, and the browser E2E test
+      pass against the real migrated database. Additionally hand-verified
+      every worker RPC (enqueue/list-pending/claim/mark-sent/delete-old)
+      directly against the real stack with a real invitation, and cleaned
+      up stray test data left behind by earlier runs today (found via
+      this verification, unrelated to the migration itself).
 
 ## Local Supabase stack (host machine, connected from this devcontainer)
 

@@ -5,11 +5,12 @@ import { createApp } from '../../src/app.js';
 const tenantId = '550e8400-e29b-41d4-a716-446655440000';
 const invitationId = '550e8400-e29b-41d4-a716-446655440001';
 
-const { getUser, rpc, from, adminFrom, ensureUserProfile } = vi.hoisted(() => ({
+const { getUser, rpc, from, adminFrom, adminRpc, ensureUserProfile } = vi.hoisted(() => ({
     getUser: vi.fn(),
     rpc: vi.fn(),
     from: vi.fn(),
     adminFrom: vi.fn(),
+    adminRpc: vi.fn(),
     ensureUserProfile: vi.fn(),
 }));
 
@@ -25,6 +26,7 @@ vi.mock('../../src/lib/supabase.js', () => ({
     }),
     getSupabaseAdmin: () => ({
         from: adminFrom,
+        rpc: adminRpc,
     }),
 }));
 
@@ -37,8 +39,12 @@ afterEach(() => {
 });
 
 function mockInvitationEmailJobQueue() {
-    const upsert = vi.fn().mockResolvedValue({
-        error: null,
+    adminRpc.mockImplementation((fn: string) => {
+        if (fn === 'enqueue_invitation_email_job') {
+            return Promise.resolve({ error: null });
+        }
+
+        return Promise.resolve({ data: null, error: null });
     });
 
     // Supports both call shapes used against `tenant_invitations`:
@@ -62,18 +68,14 @@ function mockInvitationEmailJobQueue() {
     const update = vi.fn(() => updateChain);
 
     adminFrom.mockImplementation((table: string) => {
-        if (table === 'invitation_email_jobs') {
-            return { upsert };
-        }
-
         if (table === 'tenant_invitations') {
             return { update };
         }
 
-        return { upsert: vi.fn(), update: vi.fn() };
+        return { update: vi.fn() };
     });
 
-    return { upsert, update, eq, maybeSingle };
+    return { adminRpc, update, eq, maybeSingle };
 }
 
 function buildMembershipSelect(role: string) {
@@ -237,7 +239,7 @@ describe('POST /tenants/:tenantId/invitations', () => {
             error: null,
         });
         mockTenantAccess();
-        const { upsert } = mockInvitationEmailJobQueue();
+        const { adminRpc } = mockInvitationEmailJobQueue();
         rpc.mockResolvedValue({
             data: {
                 id: 'invite-123',
@@ -271,16 +273,10 @@ describe('POST /tenants/:tenantId/invitations', () => {
             p_email: 'member@example.com',
             p_role: 'admin',
         });
-        expect(upsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                invitation_id: 'invite-123',
-                status: 'pending',
-                accept_token: expect.any(String),
-            }),
-            {
-                onConflict: 'invitation_id',
-            }
-        );
+        expect(adminRpc).toHaveBeenCalledWith('enqueue_invitation_email_job', {
+            p_invitation_id: 'invite-123',
+            p_accept_token: expect.any(String),
+        });
         expect(response.status).toBe(201);
         expect(response.body).toEqual({
             item: {
@@ -538,7 +534,7 @@ describe('POST /tenants/:tenantId/invitations/:invitationId/resend', () => {
             error: null,
         });
         mockResendFlow();
-        const { upsert, eq } = mockInvitationEmailJobQueue();
+        const { adminRpc, eq } = mockInvitationEmailJobQueue();
 
         const app = createApp();
 
@@ -547,19 +543,10 @@ describe('POST /tenants/:tenantId/invitations/:invitationId/resend', () => {
             .set('Authorization', 'Bearer valid-token');
 
         expect(eq).toHaveBeenCalledWith('status', 'pending');
-        expect(upsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                invitation_id: invitationId,
-                status: 'pending',
-                accept_token: expect.any(String),
-                attempts: 0,
-                last_error: null,
-                processed_at: null,
-            }),
-            {
-                onConflict: 'invitation_id',
-            }
-        );
+        expect(adminRpc).toHaveBeenCalledWith('enqueue_invitation_email_job', {
+            p_invitation_id: invitationId,
+            p_accept_token: expect.any(String),
+        });
         expect(response.status).toBe(200);
         expect(response.body).toEqual({
             item: {

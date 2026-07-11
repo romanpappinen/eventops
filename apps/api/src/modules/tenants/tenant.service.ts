@@ -98,21 +98,10 @@ function hashInvitationAcceptToken(token: string) {
 
 async function enqueueInvitationEmail(invitationId: string, acceptToken: string) {
     const supabaseAdmin = getSupabaseAdmin();
-    const { error } = await supabaseAdmin.from('invitation_email_jobs').upsert(
-        {
-            invitation_id: invitationId,
-            status: 'pending',
-            accept_token: acceptToken,
-            attempts: 0,
-            last_error: null,
-            processed_at: null,
-            scheduled_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-        },
-        {
-            onConflict: 'invitation_id',
-        }
-    );
+    const { error } = await supabaseAdmin.rpc('enqueue_invitation_email_job', {
+        p_invitation_id: invitationId,
+        p_accept_token: acceptToken,
+    });
 
     if (error) {
         throw error;
