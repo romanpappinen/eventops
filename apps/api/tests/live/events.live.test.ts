@@ -110,6 +110,45 @@ describe('events against a real local Supabase stack', () => {
         expect(listResponse.body.items.filter((item: { id: string }) => item.id === eventId)).toHaveLength(1);
     });
 
+    it('returns 429 once the tenant hits its daily event quota', async () => {
+        const { owner, tenantId } = await createOwnerWithTenant('events-quota');
+        const originalQuota = process.env.EVENTS_DAILY_QUOTA;
+        process.env.EVENTS_DAILY_QUOTA = '2';
+
+        try {
+            for (let i = 0; i < 2; i += 1) {
+                const response = await request(app)
+                    .post(`/tenants/${tenantId}/events`)
+                    .set('Authorization', `Bearer ${owner.accessToken}`)
+                    .send({
+                        source: 'live-test',
+                        type: 'order.created',
+                        occurredAt: new Date().toISOString(),
+                        payload: { attempt: i },
+                    });
+                expect(response.status).toBe(201);
+            }
+
+            const overQuota = await request(app)
+                .post(`/tenants/${tenantId}/events`)
+                .set('Authorization', `Bearer ${owner.accessToken}`)
+                .send({
+                    source: 'live-test',
+                    type: 'order.created',
+                    occurredAt: new Date().toISOString(),
+                    payload: { attempt: 'over-quota' },
+                });
+            expect(overQuota.status).toBe(429);
+            expect(overQuota.body).toEqual({ error: 'Daily event quota exceeded for this tenant' });
+        } finally {
+            if (originalQuota === undefined) {
+                delete process.env.EVENTS_DAILY_QUOTA;
+            } else {
+                process.env.EVENTS_DAILY_QUOTA = originalQuota;
+            }
+        }
+    });
+
     it('does not let a non-member create, list, or read events for someone else tenant (RLS boundary)', async () => {
         const { tenantId } = await createOwnerWithTenant('events-rls');
         const outsider = await registerAndSignIn(app, { emailPrefix: 'events-outsider' });

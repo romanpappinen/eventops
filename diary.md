@@ -1,5 +1,63 @@
 # Diary
 
+Date: 2026-07-11 (9)
+
+## What changed
+
+Implemented tenant event quotas, the last item under "Event ingestion
+correctness" in the "Next priorities" list. Design decisions (all made by
+the user via explicit questions before coding): events/day as the limit
+dimension, `count(*)` on the fly (no separate counter table), `429 Too
+Many Requests` on exceed.
+
+* `packages/config/src/lib/api-env.ts`: new `EVENTS_DAILY_QUOTA` env var,
+  `z.coerce.number().int().min(1).default(10000)`.
+* `apps/api/src/modules/events/events.service.ts`: new
+  `assertEventQuotaNotExceeded(supabaseUser, tenantId)`, called in
+  `createEventForTenant` right after the tenant-active check, before the
+  insert attempt. Counts events for the tenant with `created_at` in a
+  rolling 24h window (`Date.now() - 24h`, not a calendar-day boundary --
+  consistent with how `express-rate-limit`'s windows already work
+  elsewhere in this codebase) via `count: 'exact', head: true`. Reuses the
+  existing `events_tenant_created_at_idx` index from migration `0004` --
+  no new migration needed for this part.
+* Documented a known, accepted simplification directly in a code comment:
+  the quota check happens unconditionally before attempting insert, which
+  means it runs *before* we know whether a given request would actually
+  be an idempotent replay (no new row) rather than a genuine new insert.
+  A tenant already at quota gets `429` even for a technically-safe replay
+  of one of its own already-existing events. Rare edge case, not solved
+  precisely -- flagged rather than either silently ignored or over-built.
+* Added a mocked test (`events-create.test.ts`) for the 429 case, and a
+  live test (`events.live.test.ts`) that temporarily overrides
+  `process.env.EVENTS_DAILY_QUOTA = '2'` for the duration of one test,
+  creates 2 real events (both succeed), then confirms a 3rd real
+  `POST /events` call returns `429` with the exact expected error
+  message -- restores the original env value in a `finally` block
+  regardless of pass/fail.
+
+## What was verified
+
+* `pnpm --filter @eventops/api test` -- 77/77 (was 76; +1 new mocked 429
+  test; the 4 other tests that reach the insert path all needed their
+  mocks extended with a quota-check call, since `.from('events')` is now
+  called an extra time before insert).
+* `pnpm --filter @eventops/api test:live` -- 16/16 (was 15; +1 new,
+  confirming real quota enforcement against the real database with a
+  real tenant hitting a real, temporarily-lowered limit).
+* `pnpm typecheck` (all 7 packages) -- clean.
+* Confirmed 0 leftover test rows after the run (the live suite's own
+  `afterAll` cleanup handled it).
+
+## Next concrete step
+
+"Event ingestion correctness" (idempotency + quotas) is now fully closed.
+Remaining open items: Deployment prep (Phase 7, capped at preparation
+only per CLAUDE.md's boundary) and the newly-recorded, deliberately
+lower-priority event audit trail idea.
+
+---
+
 Date: 2026-07-11 (8)
 
 ## What changed

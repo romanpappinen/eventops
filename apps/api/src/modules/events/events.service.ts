@@ -1,3 +1,4 @@
+import { parseApiEnv } from '@eventops/config';
 import { ApiError } from '../../lib/api-error.js';
 import { getSupabaseUser } from '../../lib/supabase.js';
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
@@ -6,6 +7,34 @@ import { normalizeEventRecord } from './events.types.js';
 
 const eventSelectFields =
     'id, tenant_id, source, type, subject, occurred_at, received_at, payload, metadata, status, created_by_user_id, idempotency_key, created_at, updated_at';
+
+const EVENTS_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Checked before every insert attempt, so a tenant already at quota is
+ * rejected even if the specific request would have been an idempotent
+ * replay of an existing event -- a client retrying its own already-stored
+ * event right as the tenant hits quota on unrelated events is a rare edge
+ * case we're not solving precisely in this pass.
+ */
+async function assertEventQuotaNotExceeded(supabaseUser: ReturnType<typeof getSupabaseUser>, tenantId: string) {
+    const env = parseApiEnv(process.env);
+    const cutoff = new Date(Date.now() - EVENTS_QUOTA_WINDOW_MS).toISOString();
+
+    const { count, error } = await supabaseUser
+        .from('events')
+        .select('id', { count: 'exact', head: true })
+        .eq('tenant_id', tenantId)
+        .gte('created_at', cutoff);
+
+    if (error) {
+        throw new ApiError(502, 'Failed to check event quota');
+    }
+
+    if ((count ?? 0) >= env.EVENTS_DAILY_QUOTA) {
+        throw new ApiError(429, 'Daily event quota exceeded for this tenant');
+    }
+}
 
 export async function listEventsForTenant(
     authToken: string,
@@ -71,6 +100,8 @@ export async function createEventForTenant(
     if (tenant.status !== 'active') {
         throw new ApiError(409, 'Tenant is archived');
     }
+
+    await assertEventQuotaNotExceeded(supabaseUser, tenantId);
 
     const { data, error } = await supabaseUser
         .from('events')

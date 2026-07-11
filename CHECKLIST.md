@@ -302,13 +302,30 @@ observability/deployment polish.
       via list. Mocked `events-create.test.ts` also covers the replay
       path. 76 api tests + 15 live tests + typecheck across
       api/validation/web/worker all green.)
-- [ ] Tenant quotas: no mechanism exists at all today. Needs scoping
+- [x] Tenant quotas: no mechanism exists at all today. Needs scoping
       before implementation: what's the limit dimension (events per
       day? per hour? total row count?), where does the counter live (a
       new counter table vs. a `count(*)` query per request), and what
       happens on exceed (`429`? silent drop? queue for later?). Bigger
       design conversation, not a small diff — plan separately before
       coding.
+      (done 2026-07-11: user picked events/day, `count(*)` on the fly, and
+      `429`. New `EVENTS_DAILY_QUOTA` env var (`packages/config`'s
+      `apiEnvSchema`, default `10000`). `createEventForTenant` now runs
+      `assertEventQuotaNotExceeded` before every insert attempt: counts
+      events for the tenant with `created_at` in the last rolling 24h
+      (reuses the existing `events_tenant_created_at_idx` index, no new
+      migration needed) and throws `429` if at/over the limit. Known,
+      accepted simplification documented in a code comment: the quota
+      check runs before the idempotency-replay check, so a tenant already
+      at quota gets `429` even for what would have been a legitimate
+      replay of one of its own existing events -- a rare edge case, not
+      solved precisely in this pass. Verified live: temporarily set
+      `EVENTS_DAILY_QUOTA=2` inside a live test, created 2 real events
+      (both `201`), confirmed the 3rd real `POST /events` call returns
+      `429` with the exact error message. 77 api tests (1 new mocked
+      429 case) + 16 live tests (1 new) + typecheck across all 7
+      packages all green.)
 
 ### 3. Observability basics (README Phase 6, ~5% done today)
 
