@@ -240,14 +240,23 @@ observability/deployment polish.
 
 ### 1. CI pipeline (README Phase 7, partial)
 
-- [ ] `.github/workflows/ci.yml`: on push/PR, checkout, setup
+- [x] `.github/workflows/ci.yml`: on push/PR, checkout, setup
       node+pnpm, `pnpm install`, `pnpm typecheck` (turbo-orchestrated,
       already wired at the root), `pnpm test` (same — runs api/worker/web
       mocked suites, not `test:live`/`test:e2e`, since CI has no local
       Supabase or browser available; those stay dev-machine-only for now)
+      (done 2026-07-11: single `test` job on `ubuntu-latest`, Node 22 to
+      match `.devcontainer/Dockerfile`, `pnpm/action-setup` reads the
+      pnpm version from `package.json`'s `packageManager` field so it
+      can't drift out of sync. Verified locally by running the exact
+      commands the workflow runs — `pnpm install --frozen-lockfile`,
+      `pnpm typecheck` (6/6 packages), `pnpm test` (75 api + 6 worker + 7
+      web, plus 3 placeholder `echo test` packages) — all green.)
 - [ ] Branch protection note (not something I can set myself — needs the
-      user to enable it in GitHub repo settings once the workflow exists):
-      require the CI check to pass before merging to `main`
+      user to enable it in GitHub repo settings once the workflow exists,
+      and only takes effect once the workflow has actually run at least
+      once on the default branch): require the CI check to pass before
+      merging to `main`
 - [ ] Out of scope for this pass: real linting (`lint` scripts in every
       package are currently `echo lint <name>` placeholders, not actual
       ESLint/Prettier checks) — flagging as separate follow-up debt, not

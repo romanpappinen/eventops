@@ -1,5 +1,41 @@
 # Diary
 
+Date: 2026-07-11 (4)
+
+## What changed
+
+First item of the newly-planned priorities: added `.github/workflows/ci.yml`
+(the `.github` directory didn't exist at all before this). Single `test`
+job on `ubuntu-latest`: checkout, `pnpm/action-setup` (reads the pnpm
+version from `package.json`'s `packageManager` field, so it can't drift),
+`actions/setup-node` pinned to Node 22 (matches
+`.devcontainer/Dockerfile`'s base image), `pnpm install --frozen-lockfile`,
+`pnpm typecheck`, `pnpm test`. Deliberately does not run `test:live` or
+`test:e2e` -- GitHub's runner has no local Supabase stack and no browser,
+so those stay dev-machine-only.
+
+## What was verified
+
+Ran the exact commands the workflow runs, locally, in order:
+`pnpm install --frozen-lockfile` (lockfile already in sync, no changes),
+`pnpm typecheck` (turbo-orchestrated, 6/6 packages passed), `pnpm test`
+(turbo-orchestrated, 75 api + 6 worker + 7 web tests passed, plus 3
+packages with placeholder `echo test` scripts). This is the same coverage
+already verified per-package throughout the session, now confirmed to
+also work through the root-level turbo commands the CI workflow actually
+invokes.
+
+## Next concrete step
+
+Branch protection (requiring the CI check before merging to `main`) needs
+the user to enable it in GitHub's repo settings, and only after this
+workflow has run at least once on the default branch -- not something
+achievable from this sandbox. Next planned item: event ingestion
+correctness (idempotency + quotas), per the "Next priorities" list in
+`CHECKLIST.md`.
+
+---
+
 Date: 2026-07-11 (3)
 
 ## What changed
