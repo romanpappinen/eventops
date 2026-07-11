@@ -252,6 +252,19 @@ observability/deployment polish.
       commands the workflow runs — `pnpm install --frozen-lockfile`,
       `pnpm typecheck` (6/6 packages), `pnpm test` (75 api + 6 worker + 7
       web, plus 3 placeholder `echo test` packages) — all green.)
+- [x] Push the 17 commits from this session's checklist work to
+      `origin/feature/next-small-task` (done 2026-07-11 by the user — I
+      cannot push myself, no git credentials in this sandbox; confirmed
+      `git rev-parse HEAD` == `git rev-parse origin/feature/next-small-task`
+      after fetch, both at `a4409b0`)
+- [ ] The workflow itself has **not run yet**: it only triggers on
+      `push` to `main` or on a `pull_request` event, and pushing a
+      feature branch matches neither. Confirmed via an unauthenticated
+      GitHub API call (`/repos/.../pulls?state=open&head=...`) that no PR
+      is currently open from `feature/next-small-task`. Opening a PR into
+      `main` will trigger the first real run — needs to happen on GitHub
+      (no `gh` CLI / credentials available here either); ask me to draft
+      the PR title/description from this session's commits if useful.
 - [ ] Branch protection note (not something I can set myself — needs the
       user to enable it in GitHub repo settings once the workflow exists,
       and only takes effect once the workflow has actually run at least

@@ -1,5 +1,40 @@
 # Diary
 
+Date: 2026-07-11 (5)
+
+## What changed
+
+No code changes. The user pushed this session's 17 commits to
+`origin/feature/next-small-task` themselves (I have no git credentials in
+this sandbox and cannot push). Verified the push landed correctly: after
+`git fetch origin`, local `HEAD` and `origin/feature/next-small-task` both
+point at `a4409b0`.
+
+Checked whether the new CI workflow (`.github/workflows/ci.yml`) actually
+ran on GitHub as a result. It hasn't -- the workflow only triggers on
+`push` to `main` or on a `pull_request` event, and pushing a feature
+branch matches neither trigger. Confirmed no PR is currently open from
+this branch via an unauthenticated call to
+`GET /repos/romanpappinen/eventops/pulls?state=open&head=...` (empty
+result). Recorded this in `CHECKLIST.md` rather than assuming the push
+alone proved the pipeline works -- it proves the workflow file is valid
+enough to not break the push, but the actual run is still pending a PR.
+
+## What was verified
+
+Git state only (`rev-parse` comparison, GitHub API PR query). No
+application code touched this entry.
+
+## Next concrete step
+
+Opening a PR into `main` will trigger the first real CI run -- that's on
+the user (or ask me to draft the PR title/description first). Moving on to
+the next planned priority item regardless: event ingestion correctness
+(idempotency + quotas), starting with the open design questions flagged in
+`CHECKLIST.md`'s "Next priorities" section.
+
+---
+
 Date: 2026-07-11 (4)
 
 ## What changed
