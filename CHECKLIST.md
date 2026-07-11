@@ -275,9 +275,7 @@ observability/deployment polish.
       ESLint/Prettier checks) — flagging as separate follow-up debt, not
       bundling into the CI task itself
 
-### 2. Event ingestion correctness (README Phase 4, partial)
-
-- [ ] Idempotency: add a unique constraint on
+- [x] Idempotency: add a unique constraint on
       `(tenant_id, idempotency_key)` where `idempotency_key is not null`
       in a new migration (currently just a bare nullable `text` column,
       no dedup guarantee at all despite the field existing and flowing
@@ -286,6 +284,24 @@ observability/deployment polish.
       idempotent-replay semantics) or a `409 Conflict`? Recommend the
       former — that is the actual point of an idempotency key (safe
       client retries) — but confirm before implementing.
+      (done 2026-07-11: user picked "200 with existing event" and scoped
+      this round to idempotency only, quotas deferred separately.
+      `idempotencyKey` didn't even exist as a client-settable field before
+      this — `createEventDtoSchema` had no such field, so the DB column
+      was never populated by any request. Added it as an optional body
+      field. Migration `0016_events_idempotency_key_unique.sql` adds the
+      partial unique index (same pattern as the existing
+      `tenant_invitations_pending_email_unique` index). On a `23505`
+      conflict, `createEventForTenant` now looks up and returns the
+      existing event with `200` instead of erroring; the controller picks
+      `200`/`201` based on a new `replayed` flag the service returns.
+      Applied to the real local Supabase via `supabase migration up` and
+      verified with a new live test that does two real `POST /events`
+      calls with the same key and confirms the second returns the first
+      event's id/payload unchanged, plus confirms no duplicate row exists
+      via list. Mocked `events-create.test.ts` also covers the replay
+      path. 76 api tests + 15 live tests + typecheck across
+      api/validation/web/worker all green.)
 - [ ] Tenant quotas: no mechanism exists at all today. Needs scoping
       before implementation: what's the limit dimension (events per
       day? per hour? total row count?), where does the counter live (a

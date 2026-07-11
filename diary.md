@@ -1,5 +1,56 @@
 # Diary
 
+Date: 2026-07-11 (6)
+
+## What changed
+
+Implemented the idempotency half of "event ingestion correctness" from the
+"Next priorities" list (quotas deliberately deferred to a separate
+conversation, per the user's scoping choice). Applied to the real local
+Supabase, not just written and left unverified.
+
+* Discovered `idempotencyKey` was not even a client-settable field before
+  this -- `createEventDtoSchema` (`packages/validation/src/request/events.ts`)
+  had no such field, so `events.idempotency_key` was always `null`
+  regardless of what a client sent. Added it as an optional body field
+  (trimmed, 1-200 chars).
+* `supabase/migrations/0016_events_idempotency_key_unique.sql`: partial
+  unique index on `(tenant_id, idempotency_key) where idempotency_key is
+  not null` -- same pattern already used by
+  `tenant_invitations_pending_email_unique` (migration `0003`).
+* `apps/api/src/modules/events/events.service.ts`'s `createEventForTenant`
+  now passes `idempotency_key` through on insert, and on a `23505` unique
+  violation (only when an idempotency key was actually supplied) looks up
+  and returns the existing event instead of erroring. Return shape changed
+  from the raw event to `{ event, replayed }`; the controller now returns
+  `200` on replay, `201` on a genuine new insert.
+* Added a live test to `events.live.test.ts`: two real `POST /events`
+  calls with the same idempotency key against the real migrated database,
+  confirms the second returns the first event's id and original payload
+  (not the retried payload), and confirms only one row exists via list.
+  Added the matching mocked case to `events-create.test.ts`.
+
+## What was verified
+
+* Applied migration `0016` to the real local Supabase via
+  `supabase migration up --db-url ...`.
+* `pnpm --filter @eventops/api test` -- 76/76 (was 75, +1 new mocked
+  replay test). `pnpm --filter @eventops/api test:live` -- 15/15 (was 14,
+  +1 new live replay test) against the real migrated database.
+* Typecheck clean across `@eventops/api`, `@eventops/validation`,
+  `@eventops/web`, `@eventops/worker`.
+* Confirmed the live test's `afterAll` cleanup already removes its own
+  test data (0 leftover rows found on a manual sweep afterward).
+
+## Next concrete step
+
+Tenant quotas remain open and unscoped (deliberately deferred) -- needs a
+decision on limit dimension, counter storage, and exceed-behavior before
+any implementation. Otherwise the next planned priority is Observability
+basics (structured logging, request IDs) per `CHECKLIST.md`.
+
+---
+
 Date: 2026-07-11 (5)
 
 ## What changed

@@ -41,11 +41,11 @@ export async function createEvent(req: AuthenticatedRequest, res: Response) {
         throw new Error('Authenticated request is missing access token');
     }
 
-    const event = await createEventForTenant(
+    const result = await createEventForTenant(
         req.authUser!,
         authToken,
         tenantId,
         req.body as CreateEventDto
     );
-    return res.status(201).json({ item: event });
+    return res.status(result.replayed ? 200 : 201).json({ item: result.event });
 }

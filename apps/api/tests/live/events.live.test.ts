@@ -73,6 +73,43 @@ describe('events against a real local Supabase stack', () => {
         expect(response.status).toBe(404);
     });
 
+    it('replays the same event on a repeated idempotency key instead of creating a duplicate', async () => {
+        const { owner, tenantId } = await createOwnerWithTenant('events-idempotency');
+        const idempotencyKey = `live-idem-${Date.now()}`;
+
+        const first = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', `Bearer ${owner.accessToken}`)
+            .send({
+                source: 'live-test',
+                type: 'order.created',
+                occurredAt: new Date().toISOString(),
+                payload: { orderId: 'first-attempt' },
+                idempotencyKey,
+            });
+        expect(first.status).toBe(201);
+        const eventId = first.body.item.id as string;
+
+        const retry = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', `Bearer ${owner.accessToken}`)
+            .send({
+                source: 'live-test',
+                type: 'order.created',
+                occurredAt: new Date().toISOString(),
+                payload: { orderId: 'retried-attempt' },
+                idempotencyKey,
+            });
+        expect(retry.status).toBe(200);
+        expect(retry.body.item.id).toBe(eventId);
+        expect(retry.body.item.payload).toEqual({ orderId: 'first-attempt' });
+
+        const listResponse = await request(app)
+            .get(`/tenants/${tenantId}/events`)
+            .set('Authorization', `Bearer ${owner.accessToken}`);
+        expect(listResponse.body.items.filter((item: { id: string }) => item.id === eventId)).toHaveLength(1);
+    });
+
     it('does not let a non-member create, list, or read events for someone else tenant (RLS boundary)', async () => {
         const { tenantId } = await createOwnerWithTenant('events-rls');
         const outsider = await registerAndSignIn(app, { emailPrefix: 'events-outsider' });

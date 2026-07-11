@@ -83,11 +83,19 @@ export async function createEventForTenant(
             payload: input.payload,
             metadata: input.metadata ?? {},
             created_by_user_id: authUser.id,
+            idempotency_key: input.idempotencyKey ?? null,
         })
         .select(eventSelectFields)
         .single();
 
     if (error) {
+        if (error.code === '23505' && input.idempotencyKey) {
+            return {
+                event: await getExistingEventByIdempotencyKey(supabaseUser, tenantId, input.idempotencyKey),
+                replayed: true,
+            };
+        }
+
         const message = error.message.toLowerCase();
 
         if (
@@ -103,6 +111,25 @@ export async function createEventForTenant(
 
     if (!data) {
         throw new ApiError(500, 'Event creation did not return a record');
+    }
+
+    return { event: normalizeEventRecord(data), replayed: false };
+}
+
+async function getExistingEventByIdempotencyKey(
+    supabaseUser: ReturnType<typeof getSupabaseUser>,
+    tenantId: string,
+    idempotencyKey: string
+) {
+    const { data, error } = await supabaseUser
+        .from('events')
+        .select(eventSelectFields)
+        .eq('tenant_id', tenantId)
+        .eq('idempotency_key', idempotencyKey)
+        .maybeSingle();
+
+    if (error || !data) {
+        throw new ApiError(502, 'Event creation is temporarily unavailable');
     }
 
     return normalizeEventRecord(data);

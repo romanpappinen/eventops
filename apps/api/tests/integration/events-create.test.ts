@@ -326,6 +326,7 @@ describe('POST /tenants/:tenantId/events', () => {
             },
             metadata: {},
             created_by_user_id: 'user-123',
+            idempotency_key: null,
         });
         expect(response.status).toBe(201);
         expect(response.body).toEqual({
@@ -453,6 +454,87 @@ describe('POST /tenants/:tenantId/events', () => {
         expect(response.status).toBe(502);
         expect(response.body).toEqual({
             error: 'Event creation is temporarily unavailable',
+        });
+    });
+
+    it('replays the existing event with 200 when the idempotency key already exists', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'member@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+
+        const existingEvent = {
+            id: 'event-existing',
+            tenant_id: tenantId,
+            source: 'web-app',
+            type: 'order_created',
+            subject: null,
+            occurred_at: '2026-05-18T12:00:00.000Z',
+            received_at: '2026-05-18T12:00:01.000Z',
+            payload: { orderId: '123' },
+            metadata: {},
+            status: 'accepted',
+            created_by_user_id: 'user-123',
+            idempotency_key: 'retry-key-1',
+            created_at: '2026-05-18T12:00:01.000Z',
+            updated_at: '2026-05-18T12:00:01.000Z',
+        };
+
+        const single = vi.fn().mockResolvedValue({
+            data: null,
+            error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        });
+        const insertSelect = vi.fn(() => ({ single }));
+        const insert = vi.fn(() => ({ select: insertSelect }));
+
+        const maybeSingle = vi.fn().mockResolvedValue({ data: existingEvent, error: null });
+        const eqIdempotencyKey = vi.fn(() => ({ maybeSingle }));
+        const eqTenant = vi.fn(() => ({ eq: eqIdempotencyKey }));
+        const lookupSelect = vi.fn(() => ({ eq: eqTenant }));
+
+        let selectCallCount = 0;
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
+            if (table === 'tenants') {
+                return mockTenantStatus();
+            }
+
+            if (table === 'events') {
+                selectCallCount += 1;
+                return selectCallCount === 1 ? { insert, select: lookupSelect } : { select: lookupSelect };
+            }
+
+            return { select: vi.fn(), insert: vi.fn() };
+        });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({
+                source: 'web-app',
+                type: 'order_created',
+                occurredAt: '2026-05-18T12:00:00.000Z',
+                payload: { orderId: '123' },
+                idempotencyKey: 'retry-key-1',
+            });
+
+        expect(eqTenant).toHaveBeenCalledWith('tenant_id', tenantId);
+        expect(eqIdempotencyKey).toHaveBeenCalledWith('idempotency_key', 'retry-key-1');
+        expect(response.status).toBe(200);
+        expect(response.body.item).toMatchObject({
+            id: 'event-existing',
+            idempotencyKey: 'retry-key-1',
         });
     });
 });
