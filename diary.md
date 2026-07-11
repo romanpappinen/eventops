@@ -1,5 +1,41 @@
 # Diary
 
+Date: 2026-07-11 (3)
+
+## What changed
+
+No code changes. `CHECKLIST.md` was fully closed out after the private-schema
+migration work, so planned the next round of priorities and added a "Next
+priorities" section to `CHECKLIST.md`, ordered by leverage:
+
+1. CI pipeline (README Phase 7, currently 0%) -- cheap, low-risk, protects
+   every future change automatically, so it goes first before piling on
+   more feature work that only gets manually verified.
+2. Event ingestion correctness (README Phase 4, partial) -- idempotency
+   key enforcement (currently just a decorative unused column) and tenant
+   quotas (nothing exists), both in the product's core domain.
+3. Observability basics (README Phase 6, ~5%) -- structured logging,
+   request IDs.
+4. Deployment prep (README Phase 7, 0%) -- capped at preparation only per
+   CLAUDE.md's hard deploy/production boundary; the actual go-live is
+   always the user's action, never mine.
+
+Each item lists open design questions that need a decision before coding
+(e.g., idempotent-replay vs. 409 on duplicate keys; quota dimension and
+enforcement mechanism; logging library choice) rather than presuming an
+answer.
+
+## What was verified
+
+N/A -- planning only, no code touched.
+
+## Next concrete step
+
+Wait for the user to pick which of the four priority items to start on, or
+confirm the ordering, before implementing anything.
+
+---
+
 Date: 2026-07-11 (2)
 
 ## What changed

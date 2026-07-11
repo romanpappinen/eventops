@@ -228,3 +228,78 @@ machine, not from inside this sandbox — this container has no Docker.
       browser: `pnpm --filter @eventops/web exec playwright install
       --with-deps chromium` once, then `pnpm --filter @eventops/web
       test:e2e`.
+
+## Next priorities (planned 2026-07-11)
+
+Everything above is done. Source: README "Development Roadmap" phases 6-7
+(currently ~5% and 0%), plus the event-ingestion gaps found during the
+% -completion review this session. Ordered by leverage: CI protects every
+future change automatically and is cheap/low-risk, so it goes first;
+correctness gaps in the product's core domain (events) go before
+observability/deployment polish.
+
+### 1. CI pipeline (README Phase 7, partial)
+
+- [ ] `.github/workflows/ci.yml`: on push/PR, checkout, setup
+      node+pnpm, `pnpm install`, `pnpm typecheck` (turbo-orchestrated,
+      already wired at the root), `pnpm test` (same — runs api/worker/web
+      mocked suites, not `test:live`/`test:e2e`, since CI has no local
+      Supabase or browser available; those stay dev-machine-only for now)
+- [ ] Branch protection note (not something I can set myself — needs the
+      user to enable it in GitHub repo settings once the workflow exists):
+      require the CI check to pass before merging to `main`
+- [ ] Out of scope for this pass: real linting (`lint` scripts in every
+      package are currently `echo lint <name>` placeholders, not actual
+      ESLint/Prettier checks) — flagging as separate follow-up debt, not
+      bundling into the CI task itself
+
+### 2. Event ingestion correctness (README Phase 4, partial)
+
+- [ ] Idempotency: add a unique constraint on
+      `(tenant_id, idempotency_key)` where `idempotency_key is not null`
+      in a new migration (currently just a bare nullable `text` column,
+      no dedup guarantee at all despite the field existing and flowing
+      through the API). Needs a product decision first: on a duplicate
+      key, should `POST /events` return the *existing* event (200, true
+      idempotent-replay semantics) or a `409 Conflict`? Recommend the
+      former — that is the actual point of an idempotency key (safe
+      client retries) — but confirm before implementing.
+- [ ] Tenant quotas: no mechanism exists at all today. Needs scoping
+      before implementation: what's the limit dimension (events per
+      day? per hour? total row count?), where does the counter live (a
+      new counter table vs. a `count(*)` query per request), and what
+      happens on exceed (`429`? silent drop? queue for later?). Bigger
+      design conversation, not a small diff — plan separately before
+      coding.
+
+### 3. Observability basics (README Phase 6, ~5% done today)
+
+- [ ] Structured logging: replace ad hoc `console.log`/`console.error`
+      calls across `apps/api`/`apps/worker` with a consistent structured
+      logger (even a minimal JSON-line format would beat the current
+      mix); needs a library/approach decision first (pino is the common
+      lightweight choice, but worth confirming rather than assuming)
+- [ ] Request IDs: generate/propagate a request id through
+      `apps/api`'s middleware chain, include it in error responses and
+      logs, so a single request's log lines are traceable
+- [ ] Out of scope for this pass: metrics-style endpoints and dashboard
+      views (README lists these too, but they're a bigger, separate
+      effort once basic logging/request IDs exist)
+
+### 4. Deployment prep (README Phase 7, 0% done today)
+
+Scope note: per `CLAUDE.md`'s hard boundary, actually deploying,
+running production migrations, or releasing is something I can never do,
+in any permission mode. So this section is capped at *preparation* the
+user still has to trigger/approve — not a path to me shipping anything
+live.
+
+- [ ] Render deployment config (`render.yaml` or equivalent) for
+      `apps/api`/`apps/worker`/`apps/web`, as a proposed diff on a
+      feature branch only
+- [ ] Document the production Supabase project setup steps (the user
+      creates the actual project; I can only write the how-to)
+- [ ] Wire the CI pipeline (once item 1 above exists) to gate a deploy
+      step behind manual approval, per `CLAUDE.md`'s "the only path to
+      production" section
+- [ ] Deployment documentation in `README.md`
