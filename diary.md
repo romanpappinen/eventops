@@ -1,5 +1,33 @@
 # Diary
 
+Date: 2026-07-11 (8)
+
+## What changed
+
+No code changes. Discussed a gap the user spotted after the observability
+work: the new structured logging is purely internal/system-facing, not a
+tenant-visible audit trail of what happened to a specific event (received
+-> processed -> failed, with reasons/timestamps). Recommended
+deprioritizing it below tenant quotas and deployment prep -- it's not in
+the original README roadmap, isn't blocking anything, and is comparable
+in scope to the idempotency work already done. User agreed. Recorded it
+as a new, explicitly lower-priority section in `CHECKLIST.md` (open
+questions: history table vs. exposing current state only; RLS policy;
+API endpoint; frontend surface -- none scoped yet) so the idea isn't lost
+without committing to build it now.
+
+## What was verified
+
+N/A -- planning only.
+
+## Next concrete step
+
+Continuing down the "Next priorities" list in priority order: tenant
+quotas is the next unscoped item (needs decisions on limit dimension,
+counter storage, exceed-behavior before any code).
+
+---
+
 Date: 2026-07-11 (7)
 
 ## What changed

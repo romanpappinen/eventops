@@ -367,3 +367,29 @@ live.
       step behind manual approval, per `CLAUDE.md`'s "the only path to
       production" section
 - [ ] Deployment documentation in `README.md`
+
+### 5. Event audit trail for tenants (not in the original README roadmap — new idea, lower priority)
+
+Came up 2026-07-11 while discussing observability: what was built there
+(structured logs, request ids) is purely internal/system-facing — an
+ops/debugging tool, not visible to end users and not queryable by
+tenant. A *product* feature giving tenant users visibility into "what
+happened to my event" (received -> processed -> failed, with reasons and
+timestamps) is a different, separate concern. Recommended deprioritizing
+below tenant quotas and deployment prep, since it's not blocking anything
+and is comparable in scope to the idempotency work already done — the
+user agreed. Recorded here so the idea isn't lost, not scheduled yet.
+
+- [ ] Needs scoping before any implementation: does this require a new
+      `event_status_history`-style table recording every status
+      transition (richest, but a real schema/write-path change to
+      `createEventForTenant` and wherever else event status changes), or
+      is it enough to expose the existing `events` row's current
+      `status`/timestamps plus `updated_at` through a tenant-scoped API
+      response (cheaper, but not a true history — one transition only)?
+- [ ] If a history table is chosen: RLS policy (tenant members can read
+      their own tenant's history, matching the existing `events` RLS
+      pattern), and a `GET /tenants/:tenantId/events/:eventId/history`
+      -style endpoint
+- [ ] Frontend surface (a history/timeline view somewhere in
+      `apps/web`) — not scoped at all yet
