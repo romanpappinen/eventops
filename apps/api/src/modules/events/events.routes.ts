@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import * as eventValidation from '../../../../../packages/validation/src/request/events.js';
+import * as eventValidation from '@eventops/validation';
 import { asyncHandler } from '../../middleware/async-handler.js';
 import { requireAuth } from '../../middleware/require-auth.js';
 import { validate } from '../../middleware/validate.js';

@@ -375,6 +375,45 @@ in any permission mode. So this section is capped at *preparation* the
 user still has to trigger/approve — not a path to me shipping anything
 live.
 
+- [x] Fix `apps/api`/`apps/worker`'s broken `build` script and make
+      production start actually work (found while scoping the Render
+      config below — a real blocker, not planned in advance).
+      (done 2026-07-14: `apps/api/tsconfig.json`/`apps/worker/tsconfig.json`
+      inherit `noEmit: true` from `packages/tsconfig/base.json` via
+      `node.json`, with only `outDir` overridden — so `tsc -p
+      tsconfig.json` silently emitted nothing; confirmed via stale
+      `dist/server.js` untouched by a fresh `pnpm build`. Added
+      `tsconfig.build.json` in both apps (`noEmit: false`, `include:
+      ["src"]` only, extends the existing tsconfig) and pointed `build` at
+      it instead of editing the typecheck-facing `tsconfig.json`. Along
+      the way, `apps/api/src/modules/events/events.routes.ts`'s deep
+      relative import of `packages/validation/src` (rather than the
+      `@eventops/validation` package import every other file uses) was
+      making `tsc` infer a `rootDir` all the way back to a common
+      ancestor, sprawling `dist/` into a duplicated nested tree
+      (`dist/apps/api/src/...`, `dist/packages/validation/src/...`)
+      alongside the correct flat output — fixed by switching to the
+      proper package import, matching the rest of the codebase.
+      Second, deeper issue found once the build was clean: `node
+      dist/server.js` crashed immediately with `ERR_UNKNOWN_FILE_EXTENSION`
+      for `.ts` — every internal workspace package (`@eventops/config`,
+      `@eventops/shared`, `@eventops/validation`, `@eventops/logger`)
+      resolves via `package.json`'s `"main": "./src/index.ts"` straight to
+      TypeScript source, which `tsx`/`vite`/`vitest` transpile on the fly
+      but plain `node` cannot run at all. Presented two options to the
+      user (run production via `tsx` too, vs. a bigger dual dev/build
+      conditional-exports fix across all 4 shared packages); user picked
+      `tsx` in production — no dev/prod resolution-drift risk, and startup
+      overhead is small. `start` scripts in both apps now run `tsx
+      src/server.ts` / `tsx src/index.ts` (same mechanism as `dev`, just
+      without `--watch`), and `tsx` moved from `devDependencies` to
+      `dependencies` in both `package.json`s so it's present in a
+      production install. Verified both end-to-end: `NODE_ENV=production
+      pnpm start` for `apps/api` served real traffic (`GET /health` ->
+      200, correct `X-Request-Id` header, JSON-not-pretty logs); same for
+      `apps/worker` (`Worker started` / `Invitation email worker started`
+      / `Invitation cleanup sweep started` all logged correctly). Both
+      test processes stopped cleanly afterward.)
 - [ ] Render deployment config (`render.yaml` or equivalent) for
       `apps/api`/`apps/worker`/`apps/web`, as a proposed diff on a
       feature branch only

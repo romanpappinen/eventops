@@ -1,5 +1,63 @@
 # Diary
 
+Date: 2026-07-14 (10)
+
+## What changed
+
+Started "Deployment prep" (README Phase 7). Before touching Render config,
+found and fixed a real, pre-existing blocker: `apps/api`/`apps/worker`
+could not actually run as a production build at all.
+
+* `apps/api/tsconfig.json`/`apps/worker/tsconfig.json` inherit
+  `noEmit: true` from `packages/tsconfig/base.json` (only `outDir` was
+  overridden), so `build` (`tsc -p tsconfig.json`) silently emitted
+  nothing -- confirmed via a stale `dist/server.js` a fresh `pnpm build`
+  didn't touch.
+* Added `apps/api/tsconfig.build.json` and `apps/worker/tsconfig.build.json`
+  (`noEmit: false`, `include: ["src"]` only, extends the existing
+  tsconfig) and pointed `build` at them, rather than changing the
+  typecheck-facing `tsconfig.json`.
+* Fixed a `dist/` sprawl bug found once the build actually ran:
+  `events.routes.ts`'s deep relative import into `packages/validation/src`
+  (instead of the `@eventops/validation` package import used everywhere
+  else) made `tsc` infer a `rootDir` back to a common ancestor, emitting a
+  duplicated nested tree alongside the correct flat output. Fixed by
+  switching to the proper package import.
+* Found a second, more fundamental issue: `node dist/server.js` crashed
+  with `ERR_UNKNOWN_FILE_EXTENSION` for `.ts` -- all 4 internal workspace
+  packages resolve via `"main": "./src/index.ts"` directly to TS source
+  (fine for `tsx`/`vite`/`vitest`, fatal for plain `node`). Presented two
+  options to the user (run production via `tsx` too vs. a bigger dual
+  dev/build conditional-exports fix across 4 packages); user picked
+  `tsx` in production. `start` scripts now run `tsx src/server.ts` /
+  `tsx src/index.ts`, and `tsx` moved from `devDependencies` to
+  `dependencies` in both apps.
+
+## What was verified
+
+* `pnpm --filter @eventops/api typecheck` and `pnpm --filter
+  @eventops/worker typecheck` -- clean.
+* `pnpm --filter @eventops/api test` -- 77/77. `pnpm --filter
+  @eventops/worker test` -- 6/6.
+* Real production-mode boot, not just a clean exit code: ran
+  `NODE_ENV=production pnpm start` for `apps/api`, confirmed JSON
+  (not pretty-printed) logs, `GET /health` -> 200 with an
+  `X-Request-Id` header. Same for `apps/worker`: confirmed `Worker
+  started`, `Invitation email worker started`, and `Invitation cleanup
+  sweep started` all logged correctly. Both processes stopped cleanly
+  afterward, confirmed via `ps aux`.
+
+## Next concrete step
+
+Continue Deployment prep: write a Render deployment config
+(`render.yaml` or equivalent) for `apps/api`/`apps/worker`/`apps/web` as
+a proposed diff only, document production Supabase project setup steps,
+wire the CI workflow to gate a deploy step behind manual approval, and
+add deployment docs to `README.md`. Per `CLAUDE.md`, none of this gets
+applied/deployed by me -- preparation only.
+
+---
+
 Date: 2026-07-11 (9)
 
 ## What changed
