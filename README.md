@@ -648,6 +648,14 @@ git push -u origin feature/api-auth-me
 * migration workflow
 * deployment documentation
 
+Deployment prep status: `render.yaml` at the repo root defines the
+api/worker/web/redis services as a Render Blueprint (not yet applied —
+applying it is a manual, human-triggered action, never something run
+automatically). See [docs/deployment.md](docs/deployment.md) for the
+production Supabase project setup, why production runs via `tsx`
+instead of a compiled build, and what's still manual (creating the
+Blueprint, filling in secrets, wiring the CI deploy-approval gate).
+
 ---
 
 ## Engineering Principles

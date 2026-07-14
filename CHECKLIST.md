@@ -414,15 +414,46 @@ live.
       `apps/worker` (`Worker started` / `Invitation email worker started`
       / `Invitation cleanup sweep started` all logged correctly). Both
       test processes stopped cleanly afterward.)
-- [ ] Render deployment config (`render.yaml` or equivalent) for
+- [x] Render deployment config (`render.yaml` or equivalent) for
       `apps/api`/`apps/worker`/`apps/web`, as a proposed diff on a
       feature branch only
-- [ ] Document the production Supabase project setup steps (the user
+      (done 2026-07-14: verified the current Render Blueprint schema via
+      Render's docs rather than guessing from stale training data --
+      confirmed `type: keyvalue` (Redis-compatible, `type: redis` is a
+      deprecated alias), `runtime: static` + `staticPublishPath` for
+      static sites, and `fromService`/`property: connectionString` for
+      cross-service env var references. `render.yaml` at the repo root
+      defines `eventops-api` (web), `eventops-worker` (worker),
+      `eventops-web` (static site), and `eventops-redis` (keyvalue), all
+      on `branch: main`, secrets marked `sync: false`. Also fixed a real
+      port-binding gap found while writing this: `apps/api/src/server.ts`
+      only ever read `API_PORT`, but Render assigns the listen port via
+      a `PORT` env var at runtime -- now prefers `process.env.PORT` when
+      set, falling back to `API_PORT` for local dev.)
+- [x] Document the production Supabase project setup steps (the user
       creates the actual project; I can only write the how-to)
+      (done 2026-07-14: `docs/deployment.md` -- project creation,
+      applying `supabase/migrations/*` against it, re-running the same
+      anon/authenticated `EXECUTE`-privilege check that caught a real gap
+      locally per `docs/rls-rpc-plan.md`, collecting the three API keys,
+      and updating Auth redirect URLs away from `localhost`.)
 - [ ] Wire the CI pipeline (once item 1 above exists) to gate a deploy
       step behind manual approval, per `CLAUDE.md`'s "the only path to
       production" section
-- [ ] Deployment documentation in `README.md`
+      (scoped but not implemented 2026-07-14: `docs/deployment.md`
+      section 4 documents the approach -- disable Render's own
+      auto-deploy, add a second GitHub Actions job gated on `needs: test`
+      + a `production` GitHub Environment with a required reviewer, that
+      calls each service's Render Deploy Hook URL on approval. Left
+      unimplemented because it depends on state that doesn't exist yet:
+      Deploy Hook URLs only exist after the Blueprint above has actually
+      been created in Render once, and configuring a required reviewer
+      on a GitHub Environment is a repo-settings action I can't take
+      from here.)
+- [x] Deployment documentation in `README.md`
+      (done 2026-07-14: added a short "Deployment prep status" note under
+      Phase 7 in the roadmap, pointing at `render.yaml` and
+      `docs/deployment.md` rather than duplicating their content.)
 
 ### 5. Event audit trail for tenants (not in the original README roadmap — new idea, lower priority)
 

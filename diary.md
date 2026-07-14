@@ -47,14 +47,39 @@ could not actually run as a production build at all.
   sweep started` all logged correctly. Both processes stopped cleanly
   afterward, confirmed via `ps aux`.
 
+Second part of the same day: wrote `render.yaml` (Blueprint for
+`eventops-api`/`eventops-worker`/`eventops-web`/`eventops-redis`) and
+`docs/deployment.md`. Fetched Render's current Blueprint docs instead of
+relying on possibly-stale training data before writing the schema --
+worth noting since it changed a real field (`type: keyvalue` is now
+preferred over the deprecated `type: redis` alias). While writing it,
+found and fixed a real gap: `apps/api/src/server.ts` only ever read
+`API_PORT`, but Render assigns the listen port via `PORT` at runtime --
+now prefers `process.env.PORT`, falling back to `API_PORT` locally.
+Added a short "Deployment prep status" note to `README.md`'s Phase 7
+section pointing at both new files instead of duplicating their content.
+Left the CI deploy-approval gate documented but unimplemented (section 4
+of `docs/deployment.md`) -- it depends on a Render Deploy Hook URL that
+won't exist until the Blueprint is created once, and on a GitHub
+Environment reviewer setting that's a repo-settings action, not a diff.
+
+## What was verified
+
+* `pnpm --filter @eventops/api typecheck` -- clean (after the
+  `server.ts` port-binding change).
+* `pnpm --filter @eventops/api test` -- 77/77, unchanged.
+* Did not attempt to run/validate `render.yaml` against a real Render
+  account -- out of scope for me per `CLAUDE.md`'s deploy boundary; the
+  schema itself was checked against Render's current docs instead.
+
 ## Next concrete step
 
-Continue Deployment prep: write a Render deployment config
-(`render.yaml` or equivalent) for `apps/api`/`apps/worker`/`apps/web` as
-a proposed diff only, document production Supabase project setup steps,
-wire the CI workflow to gate a deploy step behind manual approval, and
-add deployment docs to `README.md`. Per `CLAUDE.md`, none of this gets
-applied/deployed by me -- preparation only.
+Deployment prep's remaining open item is the CI deploy-approval gate,
+which needs the user to create the Render Blueprint first (to get
+Deploy Hook URLs) and configure a GitHub Environment reviewer -- both
+manual, both documented in `docs/deployment.md` section 4. Otherwise
+"Deployment prep" is now content-complete; check whether anything else
+is open before picking a new area of work.
 
 ---
 

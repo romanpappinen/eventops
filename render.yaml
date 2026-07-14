@@ -1,0 +1,97 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# This file is a proposed deployment config only. Nothing here deploys
+# anything by itself: a human creates a Render Blueprint from this repo
+# in the Render dashboard, reviews every service, and fills in the
+# `sync: false` secret values by hand. CI never applies this file (see
+# CLAUDE.md's deploy boundary).
+#
+# All three services below point at ONE production Supabase project,
+# created manually — see docs/deployment.md for that setup and for the
+# full list of secrets each service needs.
+
+services:
+  - name: eventops-api
+    type: web
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @eventops/api start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: EVENTS_DAILY_QUOTA
+        value: "10000"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: eventops-redis
+          property: connectionString
+
+  - name: eventops-worker
+    type: worker
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @eventops/worker start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: INVITATION_EMAIL_BATCH_SIZE
+        value: "10"
+      - key: INVITATION_EMAIL_POLL_INTERVAL_MS
+        value: "5000"
+      - key: INVITATION_EMAIL_MAX_ATTEMPTS
+        value: "5"
+      - key: INVITATION_EMAIL_JOB_RETENTION_DAYS
+        value: "30"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: INVITATION_FROM_EMAIL
+        sync: false
+      - key: APP_WEB_BASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: eventops-redis
+          property: connectionString
+
+  - name: eventops-web
+    type: web
+    runtime: static
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @eventops/web build
+    staticPublishPath: apps/web/dist
+    envVars:
+      # Vite bakes these in at build time -- they end up in the client
+      # bundle and are NOT secret, but still set manually so each Render
+      # environment can point at its own API/Supabase project without
+      # editing this file.
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+
+  - name: eventops-redis
+    type: keyvalue
+    plan: starter
+    region: oregon
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere (tighten once Render's static egress IPs are known)
