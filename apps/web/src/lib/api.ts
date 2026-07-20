@@ -173,7 +173,14 @@ interface MembershipAcceptResponse {
   }
 }
 
-const defaultApiUrl = 'http://localhost:3000'
+// Under the actual Vite dev server, default to a relative base URL so
+// requests go through its proxy (see vite.config.ts) -- this lets the
+// browser reach the API through the same forwarded port as the web app
+// itself, without needing the API's own port exposed separately. Checked
+// via MODE rather than DEV since vitest also sets DEV=true for its own
+// 'test' mode. Production always sets VITE_API_URL explicitly (see
+// render.yaml), so this fallback rarely matters there.
+const defaultApiUrl = import.meta.env.MODE === 'development' ? '' : 'http://localhost:3000'
 
 function getApiBaseUrl() {
   return import.meta.env.VITE_API_URL ?? defaultApiUrl
