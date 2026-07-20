@@ -1,5 +1,53 @@
 # Diary
 
+Date: 2026-07-20 (3)
+
+## What changed
+
+Two small user-requested fixes/additions, after confirming the previous
+Vite-proxy fix worked:
+
+* Navbar bug: `AppSidebar.vue` used `justify-content: space-between` across
+  three flex children (header block, nav, logout button) on a
+  `min-height: 100vh` container -- with three items, `space-between` puts
+  the middle one (the nav) roughly at the vertical center of the page
+  instead of right under the header, which is what the user was seeing.
+  Fixed by grouping the header block and nav together in a `.sidebar-top`
+  wrapper and pinning only the logout button to the bottom via
+  `margin-top: auto` on a plain flex column.
+* New English docs page (`DocsIngestionPage.vue`, route
+  `/docs/ingestion`, linked from the sidebar as "API docs") walking a
+  newcomer through server-to-server event ingestion end to end: how to get
+  an API key, the `POST /events` endpoint and request/response shape
+  (pulled directly from `createEventDtoSchema`, `events.controller.ts`,
+  and `requireApiKey`'s actual status codes rather than guessed), field
+  reference table, idempotency behavior, attribution, and a working curl
+  example.
+
+## What was verified
+
+* `pnpm --filter @eventops/web typecheck` / `test` -- clean, 12/12.
+* Real-browser check via a throwaway Playwright script (register, log in,
+  screenshot the sidebar, click through to the docs page, screenshot it).
+  First attempt showed the fix wasn't visible and Vue Router logged
+  `No match found for location with path "/docs/ingestion"` -- the running
+  Vite dev server was serving a stale, pre-edit version of `routes.ts`
+  (confirmed by curling `/src/core/navigation/routes.ts` directly and
+  diffing against disk). File-watching isn't reliable in this sandbox for
+  changes made through the tool rather than the dev server's own process,
+  so a plain edit doesn't reliably trigger Vite's HMR here -- worth
+  remembering for any future UI verification in this environment: after
+  editing routed/entry files, restart the dev server rather than trusting
+  HMR, then re-verify. After restarting, the same script confirmed both
+  fixes render correctly with no console errors.
+
+## Next concrete step
+
+Both fixes are done, verified in a real browser, and ready to commit.
+Nothing else queued right now -- ask the user what's next once these land.
+
+---
+
 Date: 2026-07-20 (2)
 
 ## What changed
