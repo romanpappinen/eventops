@@ -56,6 +56,7 @@ export interface TenantEvent {
   createdByUserId: string | null
   createdByApiKeyId: string | null
   idempotencyKey: string | null
+  failureReason: string | null
   createdAt: string
   updatedAt: string
 }

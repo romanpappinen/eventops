@@ -11,7 +11,10 @@ const workerEnvSchema = z.object({
     INVITATION_EMAIL_BATCH_SIZE: z.coerce.number().int().min(1).default(10),
     INVITATION_EMAIL_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(5000),
     INVITATION_EMAIL_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
-    INVITATION_EMAIL_JOB_RETENTION_DAYS: z.coerce.number().int().min(1).default(30)
+    INVITATION_EMAIL_JOB_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
+    EVENT_PROCESSING_BATCH_SIZE: z.coerce.number().int().min(1).default(20),
+    EVENT_PROCESSING_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(3000),
+    EVENT_MAX_PAYLOAD_BYTES: z.coerce.number().int().min(1).default(32768)
 });
 
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;

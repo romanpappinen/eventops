@@ -556,16 +556,65 @@ below tenant quotas and deployment prep, since it's not blocking anything
 and is comparable in scope to the idempotency work already done — the
 user agreed. Recorded here so the idea isn't lost, not scheduled yet.
 
-- [ ] Needs scoping before any implementation: does this require a new
-      `event_status_history`-style table recording every status
-      transition (richest, but a real schema/write-path change to
-      `createEventForTenant` and wherever else event status changes), or
-      is it enough to expose the existing `events` row's current
-      `status`/timestamps plus `updated_at` through a tenant-scoped API
-      response (cheaper, but not a true history — one transition only)?
-- [ ] If a history table is chosen: RLS policy (tenant members can read
-      their own tenant's history, matching the existing `events` RLS
-      pattern), and a `GET /tenants/:tenantId/events/:eventId/history`
-      -style endpoint
-- [ ] Frontend surface (a history/timeline view somewhere in
-      `apps/web`) — not scoped at all yet
+- [x] Scoped and implemented 2026-07-20. Discovered while scoping: `events.status`
+      was never actually transitioned by any code anywhere in the repo --
+      every event sat at `accepted` forever, so "history" would have been
+      a history of nothing. Decided with the user to build the real thing
+      instead of just exposing a static field: a genuine async processing
+      step in `apps/worker` that gives `status` real meaning, then surface
+      it. Resolved the history-table-vs-columns question in favor of
+      columns: with only one real transition per event (no retries),
+      `event_status_history` would store at most one row per event -- no
+      more informative than a column, far more infrastructure (new table,
+      RLS policy, new endpoint, more UI). Went with a single new
+      `failure_reason text` column on `events` (migration
+      `0018_events_failure_reason.sql`), reusing the existing `updated_at`
+      (already present, confirmed never touched by any code) as the
+      "processing finished at" timestamp.
+      "Processing" = structural validation, since there are no downstream
+      integrations in this project to actually deliver events to: reject
+      any event whose `payload`+`metadata` combined exceed
+      `EVENT_MAX_PAYLOAD_BYTES` (default 32KB) -> `failed` with a specific
+      `failureReason`; otherwise -> `processed`. This is a real gap, not a
+      redundant check: `express.json()`'s default 100KB body limit means
+      anything 32-100KB currently sails through synchronous ingestion
+      untouched today.
+      New `apps/worker/src/event-processor.ts` (`runEventProcessor()`,
+      structured like the existing `invitation-email-worker.ts`'s poll
+      loop) claims events via a plain conditional PostgREST PATCH
+      (`events?id=eq.<id>&status=eq.accepted`) -- no new
+      `event_processing_jobs` table/RPC needed, unlike the invitation-email
+      case, because `events` is a normal public table the worker's
+      service-role key already reaches directly, and the validation is
+      synchronous (no external I/O), so there's no claim/complete gap to
+      protect against. New worker env vars
+      (`EVENT_PROCESSING_BATCH_SIZE`/`EVENT_PROCESSING_POLL_INTERVAL_MS`/
+      `EVENT_MAX_PAYLOAD_BYTES`) added to `packages/config`'s
+      `worker-env.ts` and `render.yaml`'s `eventops-worker` block.
+      `failureReason` flows through `eventSelectFields` ->
+      `normalizeEventRecord` -> `EventItem` -> the existing
+      `GET /tenants/:tenantId/events` endpoints unchanged otherwise -- no
+      new API surface needed.
+      Frontend: `TenantEventsPage.vue`'s events table shows the failure
+      reason under a failed event's status, plus a manual "Refresh" button
+      (processing is now decoupled from the request that created the
+      event; this repo has no websockets/polling anywhere, so a manual
+      refresh matches the existing non-realtime convention).
+      `DocsIngestionPage.vue` gained a new "Processing" section explaining
+      the async status transition to newcomers.
+      Verified: `apps/worker` typecheck clean, 8/8 tests (new
+      `event-processor.test.ts`, mirrors `invitation-email-worker.test.ts`'s
+      mocking convention); `apps/api` typecheck clean, 94/94 (existing
+      `events.types.test.ts`/`events-get.test.ts`/`events-list.test.ts`/
+      `events-create.test.ts` fixtures updated with `failureReason: null`);
+      `apps/web` typecheck clean, 12/12. Live check against the real local
+      Supabase stack + real running worker: sent one small and one
+      41KB event via `POST /events` with a real API key and zero Supabase
+      session, waited one poll interval, confirmed via `GET
+      /tenants/:tenantId/events` that the small event became `processed`
+      and the large one `failed` with the exact expected
+      `failureReason` message. Browser check (Playwright): same flow
+      through the real UI -- created a tenant and API key, sent both
+      events, clicked Refresh, screenshot confirms the failed row shows
+      its reason in red under the status and the processed row shows
+      clean, both attributed to the API key by name.

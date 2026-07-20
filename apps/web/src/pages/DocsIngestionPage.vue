@@ -187,7 +187,23 @@ Content-Type: application/json
     </div>
 
     <div class="docs-card">
-      <p class="eyebrow">6. Where events show up</p>
+      <p class="eyebrow">6. Processing</p>
+      <h2>Status after ingestion</h2>
+      <p class="intro">
+        A successful <code>POST /events</code> means the event was accepted and stored -- it does
+        not mean it has been validated yet. Every event starts at <code>status: "accepted"</code>.
+        A background worker picks up accepted events shortly afterward and checks that their
+        combined <code>payload</code> and <code>metadata</code> don't exceed a size limit
+        (32KB by default). If they're within the limit, the event moves to
+        <code>status: "processed"</code>. If not, it moves to <code>status: "failed"</code> with
+        <code>failureReason</code> explaining why. This means <code>GET /tenants/:tenantId/events</code>
+        can briefly show <code>accepted</code> right after you send an event, before the worker
+        catches up -- that's expected, not an error.
+      </p>
+    </div>
+
+    <div class="docs-card">
+      <p class="eyebrow">7. Where events show up</p>
       <h2>Attribution</h2>
       <p class="intro">
         Every event sent through this endpoint is attributed to the API key that sent it, and
@@ -199,7 +215,7 @@ Content-Type: application/json
     </div>
 
     <div class="docs-card">
-      <p class="eyebrow">Example</p>
+      <p class="eyebrow">8. Example</p>
       <h2>curl</h2>
       <pre class="code-block"><code>curl -X POST http://localhost:3000/events \
   -H "Authorization: Bearer eo_live_your_raw_key" \

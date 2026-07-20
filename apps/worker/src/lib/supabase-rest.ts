@@ -177,3 +177,52 @@ export async function updateTenantInvitation(invitationId: string, payload: Reco
         },
     });
 }
+
+export async function listAcceptedEvents(limit: number) {
+    return (
+        (await postgrestRequest<
+            Array<{
+                id: string;
+                payload: Record<string, unknown>;
+                metadata: Record<string, unknown>;
+            }>
+        >('events', {
+            query: {
+                status: 'eq.accepted',
+                order: 'created_at.asc',
+                limit: String(limit),
+            },
+            select: 'id,payload,metadata',
+        })) ?? []
+    );
+}
+
+export async function markEventProcessed(eventId: string) {
+    await postgrestRequest('events', {
+        method: 'PATCH',
+        body: {
+            status: 'processed',
+            failure_reason: null,
+            updated_at: new Date().toISOString(),
+        },
+        query: {
+            id: `eq.${eventId}`,
+            status: 'eq.accepted',
+        },
+    });
+}
+
+export async function markEventFailed(eventId: string, reason: string) {
+    await postgrestRequest('events', {
+        method: 'PATCH',
+        body: {
+            status: 'failed',
+            failure_reason: reason,
+            updated_at: new Date().toISOString(),
+        },
+        query: {
+            id: `eq.${eventId}`,
+            status: 'eq.accepted',
+        },
+    });
+}

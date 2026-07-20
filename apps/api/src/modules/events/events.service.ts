@@ -6,7 +6,7 @@ import type { CreateEventDto, ListEventsQueryDto } from '@eventops/validation';
 import { normalizeEventRecord } from './events.types.js';
 
 const eventSelectFields =
-    'id, tenant_id, source, type, subject, occurred_at, received_at, payload, metadata, status, created_by_user_id, created_by_api_key_id, idempotency_key, created_at, updated_at';
+    'id, tenant_id, source, type, subject, occurred_at, received_at, payload, metadata, status, created_by_user_id, created_by_api_key_id, idempotency_key, failure_reason, created_at, updated_at';
 
 const EVENTS_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
 

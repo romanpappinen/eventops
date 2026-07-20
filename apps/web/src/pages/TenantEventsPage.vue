@@ -65,6 +65,20 @@ onMounted(async () => {
   }
 })
 
+async function onRefreshEvents() {
+  const accessToken = auth.session?.access_token
+
+  if (!accessToken || !tenantId.value) {
+    return
+  }
+
+  try {
+    await tenants.fetchEvents(accessToken, tenantId.value)
+  } catch {
+    return
+  }
+}
+
 function resetForm() {
   source.value = ''
   type.value = ''
@@ -218,8 +232,24 @@ async function onCreateEvent() {
       </div>
 
       <div class="tenant-card">
-        <p class="eyebrow">Log</p>
-        <h2>Recent events</h2>
+        <div class="log-header">
+          <div>
+            <p class="eyebrow">Log</p>
+            <h2>Recent events</h2>
+          </div>
+          <button
+            type="button"
+            class="secondary-link"
+            :disabled="tenants.eventsStatus === 'loading'"
+            @click="onRefreshEvents"
+          >
+            Refresh
+          </button>
+        </div>
+        <p class="intro">
+          A background worker validates each event shortly after it's received -- refresh to see
+          the latest status.
+        </p>
 
         <p v-if="tenants.eventsStatus === 'loading'">Loading events...</p>
 
@@ -246,7 +276,12 @@ async function onCreateEvent() {
                 <td>{{ event.type }}</td>
                 <td>{{ event.subject ?? '—' }}</td>
                 <td>{{ new Date(event.occurredAt).toLocaleString() }}</td>
-                <td>{{ event.status }}</td>
+                <td>
+                  {{ event.status }}
+                  <span v-if="event.status === 'failed'" class="failure-reason">
+                    {{ event.failureReason }}
+                  </span>
+                </td>
                 <td>{{ attribution(event) }}</td>
               </tr>
             </tbody>
@@ -306,6 +341,31 @@ h2 {
   text-decoration: none;
   border: 1px solid rgba(29, 27, 23, 0.12);
   background: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+}
+
+.secondary-link:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.log-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.log-header .secondary-link {
+  margin-top: 0;
+}
+
+.failure-reason {
+  display: block;
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .event-form {

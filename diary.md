@@ -1,5 +1,76 @@
 # Diary
 
+Date: 2026-07-20 (4)
+
+## What changed
+
+User picked up the deprioritized "Event audit trail for tenants" idea from
+`CHECKLIST.md` section 5. Before implementing, grepped `apps/api` and
+`apps/worker` and found the premise was stale: `events.status` is set to
+`'accepted'` at insert and **never changed by any code anywhere** -- there
+is no processing pipeline at all, so a "history of status changes" would
+have been a history of nothing. Talked this through with the user
+(including a detour where they asked me to re-explain the whole thing in
+plain language, since the jump straight into design trade-offs lost them)
+and got agreement to build the real thing instead: an actual async
+processing step in `apps/worker`, with a plan validated by a Plan subagent
+against the real code before implementing (full plan at
+`/home/node/.claude/plans/scalable-wiggling-sloth.md`).
+
+Design, in short: "processing" = structural payload/metadata size
+validation (no downstream integrations exist in this project to actually
+deliver events to) -- a real gap, not a fake check, since Express's default
+100KB body limit lets anything up to 100KB through synchronous ingestion
+today, so this is the only thing that would ever catch a 32-100KB payload.
+Single atomic `accepted` -> `processed`/`failed` transition, no
+intermediate status (the check is synchronous). Result stored as one new
+`failure_reason` column on `events` (migration
+`0018_events_failure_reason.sql`) rather than a separate history table --
+with only one real transition per event ever (no retries), a history table
+would store at most one row per event, no more informative than a column.
+New `apps/worker/src/event-processor.ts` claims events via a plain
+conditional PostgREST PATCH (`events?id=eq.<id>&status=eq.accepted`), no
+new jobs table/RPC needed since `events` is a normal public table the
+worker's service-role key already reaches directly (unlike
+`invitation_email_jobs`, deliberately hidden in a `private` schema).
+
+## What was verified
+
+* `pnpm --filter @eventops/worker typecheck` / `test` -- clean, 8/8 (new
+  `event-processor.test.ts`).
+* `pnpm --filter @eventops/api typecheck` / `test` -- clean, 94/94
+  (existing events fixtures updated with `failureReason: null`).
+* `pnpm --filter @eventops/web typecheck` / `test` -- clean, 12/12.
+* Migration `0018` applied to the real local Supabase stack, confirmed via
+  `information_schema.columns`.
+* Live check: restarted the dev servers (HMR still unreliable in this
+  sandbox for the worker process too, not just Vite -- confirmed the new
+  `event-processor.ts` only started logging after a full restart),
+  registered a real user via curl, created a real tenant + API key, sent
+  one small and one ~41KB event via `POST /events` with zero Supabase
+  session, waited one poll interval (3s), confirmed via `GET
+  /tenants/:tenantId/events` that the small event became `processed` and
+  the large one `failed` with the exact expected `failureReason` string.
+* Browser check (throwaway Playwright script, same pattern as prior
+  sessions): same flow through the real UI end to end -- screenshot
+  confirms the failed event's reason renders in red under its status, the
+  processed event renders clean, both attributed to the API key by name,
+  and the new Refresh button actually pulls the updated statuses in.
+
+## Next concrete step
+
+Feature is done, verified live and in a real browser, `CHECKLIST.md`
+section 5 fully checked off. `.env.example` still needs the 3 new worker
+vars appended by the user manually -- I'm blocked from reading/editing it
+per `CLAUDE.md`'s secrets boundary even though it's nominally on the
+allowed list (same sandbox permission restriction hit earlier this
+session). Commit this work, then ask the user what's next -- CI pipeline
+PR / branch protection and the deploy-gate wiring are the only other
+open items in `CHECKLIST.md`, both requiring the user's own GitHub/Render
+actions rather than more code.
+
+---
+
 Date: 2026-07-20 (3)
 
 ## What changed

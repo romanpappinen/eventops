@@ -359,6 +359,7 @@ describe('POST /tenants/:tenantId/events', () => {
                 createdByUserId: 'user-123',
                 createdByApiKeyId: null,
                 idempotencyKey: null,
+                failureReason: null,
                 createdAt: '2026-05-18T12:00:01.000Z',
                 updatedAt: '2026-05-18T12:00:01.000Z',
             },

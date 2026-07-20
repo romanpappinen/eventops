@@ -4,6 +4,7 @@ import { createLogger } from '@eventops/logger';
 import { parseWorkerEnv } from '@eventops/config';
 import { runInvitationEmailWorker } from './invitation-email-worker.js';
 import { runInvitationCleanupSweep } from './invitation-cleanup-sweep.js';
+import { runEventProcessor } from './event-processor.js';
 
 const envPath = path.resolve(process.cwd(), '../../.env');
 dotenv.config({ path: envPath });
@@ -15,12 +16,13 @@ logger.info(
     {
         redisConfigured: Boolean(env.REDIS_URL),
         invitationEmailBatchSize: env.INVITATION_EMAIL_BATCH_SIZE,
+        eventProcessingBatchSize: env.EVENT_PROCESSING_BATCH_SIZE,
     },
     'Worker started'
 );
 
 async function main() {
-    await Promise.all([runInvitationEmailWorker(), runInvitationCleanupSweep()]);
+    await Promise.all([runInvitationEmailWorker(), runInvitationCleanupSweep(), runEventProcessor()]);
 }
 
 void main();

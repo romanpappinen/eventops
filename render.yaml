@@ -55,6 +55,12 @@ services:
         value: "5"
       - key: INVITATION_EMAIL_JOB_RETENTION_DAYS
         value: "30"
+      - key: EVENT_PROCESSING_BATCH_SIZE
+        value: "20"
+      - key: EVENT_PROCESSING_POLL_INTERVAL_MS
+        value: "3000"
+      - key: EVENT_MAX_PAYLOAD_BYTES
+        value: "32768"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
