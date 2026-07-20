@@ -1,14 +1,16 @@
 import { parseApiEnv } from '@eventops/config';
 import { ApiError } from '../../lib/api-error.js';
-import { getSupabaseUser } from '../../lib/supabase.js';
+import { getSupabaseAdmin, getSupabaseUser } from '../../lib/supabase.js';
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
 import type { CreateEventDto, ListEventsQueryDto } from '@eventops/validation';
 import { normalizeEventRecord } from './events.types.js';
 
 const eventSelectFields =
-    'id, tenant_id, source, type, subject, occurred_at, received_at, payload, metadata, status, created_by_user_id, idempotency_key, created_at, updated_at';
+    'id, tenant_id, source, type, subject, occurred_at, received_at, payload, metadata, status, created_by_user_id, created_by_api_key_id, idempotency_key, created_at, updated_at';
 
 const EVENTS_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+type EventsSupabaseClient = ReturnType<typeof getSupabaseUser> | ReturnType<typeof getSupabaseAdmin>;
 
 /**
  * Checked before every insert attempt, so a tenant already at quota is
@@ -17,7 +19,7 @@ const EVENTS_QUOTA_WINDOW_MS = 24 * 60 * 60 * 1000;
  * event right as the tenant hits quota on unrelated events is a rare edge
  * case we're not solving precisely in this pass.
  */
-async function assertEventQuotaNotExceeded(supabaseUser: ReturnType<typeof getSupabaseUser>, tenantId: string) {
+export async function assertEventQuotaNotExceeded(supabaseUser: EventsSupabaseClient, tenantId: string) {
     const env = parseApiEnv(process.env);
     const cutoff = new Date(Date.now() - EVENTS_QUOTA_WINDOW_MS).toISOString();
 
@@ -147,8 +149,70 @@ export async function createEventForTenant(
     return { event: normalizeEventRecord(data), replayed: false };
 }
 
-async function getExistingEventByIdempotencyKey(
-    supabaseUser: ReturnType<typeof getSupabaseUser>,
+/**
+ * Server-to-server ingestion path: the caller has no Supabase session at
+ * all (validated only by `requireApiKey` against the api_keys table), so
+ * this runs entirely on the admin client and the tenant comes solely from
+ * the already-resolved API key, never from client input.
+ */
+export async function createEventViaApiKey(tenantId: string, apiKeyId: string, input: CreateEventDto) {
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: tenant, error: tenantError } = await supabaseAdmin
+        .from('tenants')
+        .select('status')
+        .eq('id', tenantId)
+        .maybeSingle();
+
+    if (tenantError) {
+        throw new ApiError(502, 'Failed to load tenant');
+    }
+
+    if (!tenant) {
+        throw new ApiError(404, 'Tenant not found');
+    }
+
+    if (tenant.status !== 'active') {
+        throw new ApiError(409, 'Tenant is archived');
+    }
+
+    await assertEventQuotaNotExceeded(supabaseAdmin, tenantId);
+
+    const { data, error } = await supabaseAdmin
+        .from('events')
+        .insert({
+            tenant_id: tenantId,
+            source: input.source,
+            type: input.type,
+            subject: input.subject ?? null,
+            occurred_at: input.occurredAt,
+            payload: input.payload,
+            metadata: input.metadata ?? {},
+            created_by_api_key_id: apiKeyId,
+            idempotency_key: input.idempotencyKey ?? null,
+        })
+        .select(eventSelectFields)
+        .single();
+
+    if (error) {
+        if (error.code === '23505' && input.idempotencyKey) {
+            return {
+                event: await getExistingEventByIdempotencyKey(supabaseAdmin, tenantId, input.idempotencyKey),
+                replayed: true,
+            };
+        }
+
+        throw new ApiError(502, 'Event creation is temporarily unavailable');
+    }
+
+    if (!data) {
+        throw new ApiError(500, 'Event creation did not return a record');
+    }
+
+    return { event: normalizeEventRecord(data), replayed: false };
+}
+
+export async function getExistingEventByIdempotencyKey(
+    supabaseUser: EventsSupabaseClient,
     tenantId: string,
     idempotencyKey: string
 ) {

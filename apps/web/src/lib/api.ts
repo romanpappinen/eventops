@@ -31,6 +31,35 @@ export interface TenantInvitation {
   acceptTokenExpiresAt: string | null
 }
 
+export interface ApiKey {
+  id: string
+  tenantId: string
+  name: string
+  keyPrefix: string
+  createdAt: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+  rawKey?: string
+}
+
+export interface TenantEvent {
+  id: string
+  tenantId: string
+  source: string
+  type: string
+  subject: string | null
+  occurredAt: string
+  receivedAt: string
+  payload: Record<string, unknown>
+  metadata: Record<string, unknown>
+  status: string
+  createdByUserId: string | null
+  createdByApiKeyId: string | null
+  idempotencyKey: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface InvitationAcceptDetails {
   invitationId: string
   tenantId: string
@@ -111,6 +140,26 @@ interface InvitationAcceptDetailsResponse {
     status: 'pending' | 'accepted' | 'revoked' | 'expired' | 'archived'
     expiresAt: string | null
   }
+}
+
+// Unlike tenants/invitations, apps/api already normalizes api-keys and
+// events to camelCase server-side (see normalizeApiKeyRecord /
+// normalizeEventRecord), so the wire shape matches ApiKey/TenantEvent
+// directly -- no snake_case *Item + mapper layer needed here.
+interface ApiKeyResponse {
+  item: ApiKey
+}
+
+interface ApiKeysResponse {
+  items: ApiKey[]
+}
+
+interface TenantEventResponse {
+  item: TenantEvent
+}
+
+interface TenantEventsResponse {
+  items: TenantEvent[]
 }
 
 interface MembershipAcceptResponse {
@@ -327,6 +376,93 @@ export async function revokeTenantInvitation(
   }
 
   return toTenantInvitation(body.item)
+}
+
+export async function listTenantApiKeys(accessToken: string, tenantId: string) {
+  const response = await fetch(`${getApiBaseUrl()}/tenants/${tenantId}/api-keys`, {
+    headers: createAuthHeaders(accessToken),
+  })
+
+  const body = await parseJson<Partial<ApiKeysResponse> & { error?: string }>(response)
+
+  if (!response.ok || !Array.isArray(body.items)) {
+    throw new Error(body.error ?? 'Failed to load API keys')
+  }
+
+  return body.items
+}
+
+export async function createTenantApiKey(accessToken: string, tenantId: string, name: string) {
+  const response = await fetch(`${getApiBaseUrl()}/tenants/${tenantId}/api-keys`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken, true),
+    body: JSON.stringify({ name }),
+  })
+
+  const body = await parseJson<Partial<ApiKeyResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to create API key')
+  }
+
+  return body.item
+}
+
+export async function revokeTenantApiKey(accessToken: string, tenantId: string, apiKeyId: string) {
+  const response = await fetch(`${getApiBaseUrl()}/tenants/${tenantId}/api-keys/${apiKeyId}`, {
+    method: 'DELETE',
+    headers: createAuthHeaders(accessToken),
+  })
+
+  const body = await parseJson<Partial<ApiKeyResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to revoke API key')
+  }
+
+  return body.item
+}
+
+export async function listTenantEvents(accessToken: string, tenantId: string) {
+  const response = await fetch(`${getApiBaseUrl()}/tenants/${tenantId}/events`, {
+    headers: createAuthHeaders(accessToken),
+  })
+
+  const body = await parseJson<Partial<TenantEventsResponse> & { error?: string }>(response)
+
+  if (!response.ok || !Array.isArray(body.items)) {
+    throw new Error(body.error ?? 'Failed to load events')
+  }
+
+  return body.items
+}
+
+export async function createTenantEvent(
+  accessToken: string,
+  tenantId: string,
+  input: {
+    source: string
+    type: string
+    subject?: string
+    occurredAt: string
+    payload: Record<string, unknown>
+    metadata?: Record<string, unknown>
+    idempotencyKey?: string
+  },
+) {
+  const response = await fetch(`${getApiBaseUrl()}/tenants/${tenantId}/events`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken, true),
+    body: JSON.stringify(input),
+  })
+
+  const body = await parseJson<Partial<TenantEventResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to create event')
+  }
+
+  return body.item
 }
 
 export async function getInvitationAcceptDetails(accessToken: string, token: string) {

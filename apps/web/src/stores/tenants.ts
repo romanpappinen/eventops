@@ -1,12 +1,19 @@
 import { defineStore } from 'pinia'
 import {
   createTenant as createTenantRequest,
+  createTenantApiKey as createTenantApiKeyRequest,
+  createTenantEvent as createTenantEventRequest,
   getTenants as getTenantsRequest,
   inviteTenantMember as inviteTenantMemberRequest,
+  listTenantApiKeys as listTenantApiKeysRequest,
+  listTenantEvents as listTenantEventsRequest,
   listTenantInvitations as listTenantInvitationsRequest,
   resendTenantInvitation as resendTenantInvitationRequest,
+  revokeTenantApiKey as revokeTenantApiKeyRequest,
   revokeTenantInvitation as revokeTenantInvitationRequest,
+  type ApiKey,
   type Tenant,
+  type TenantEvent,
   type TenantInvitation,
 } from '../lib/api'
 
@@ -32,6 +39,14 @@ export const useTenantsStore = defineStore('tenants', {
     invitationsLoaded: false,
     invitationsStatus: 'idle' as TenantStatus,
     invitationsError: null as string | null,
+    apiKeys: [] as ApiKey[],
+    apiKeysLoaded: false,
+    apiKeysStatus: 'idle' as TenantStatus,
+    apiKeysError: null as string | null,
+    events: [] as TenantEvent[],
+    eventsLoaded: false,
+    eventsStatus: 'idle' as TenantStatus,
+    eventsError: null as string | null,
   }),
   getters: {
     getById: (state) => (tenantId: string) => state.items.find((item) => item.id === tenantId) ?? null,
@@ -148,6 +163,98 @@ export const useTenantsStore = defineStore('tenants', {
         this.invitationsStatus = 'error'
         this.invitationsError =
           error instanceof Error ? error.message : 'Failed to revoke invitation'
+        throw error
+      }
+    },
+    async fetchApiKeys(accessToken: string, tenantId: string) {
+      this.apiKeysStatus = 'loading'
+      this.apiKeysError = null
+
+      try {
+        this.apiKeys = await listTenantApiKeysRequest(accessToken, tenantId)
+        this.apiKeysLoaded = true
+        this.apiKeysStatus = 'idle'
+        return this.apiKeys
+      } catch (error) {
+        this.apiKeysStatus = 'error'
+        this.apiKeysError = error instanceof Error ? error.message : 'Failed to load API keys'
+        throw error
+      }
+    },
+    async createApiKey(accessToken: string, tenantId: string, name: string) {
+      this.apiKeysStatus = 'saving'
+      this.apiKeysError = null
+
+      try {
+        const apiKey = await createTenantApiKeyRequest(accessToken, tenantId, name)
+        this.apiKeys.unshift(apiKey)
+
+        this.apiKeysStatus = 'idle'
+        return apiKey
+      } catch (error) {
+        this.apiKeysStatus = 'error'
+        this.apiKeysError = error instanceof Error ? error.message : 'Failed to create API key'
+        throw error
+      }
+    },
+    async revokeApiKey(accessToken: string, tenantId: string, apiKeyId: string) {
+      this.apiKeysStatus = 'saving'
+      this.apiKeysError = null
+
+      try {
+        const apiKey = await revokeTenantApiKeyRequest(accessToken, tenantId, apiKeyId)
+        upsertById(this.apiKeys, apiKey)
+
+        this.apiKeysStatus = 'idle'
+        return apiKey
+      } catch (error) {
+        this.apiKeysStatus = 'error'
+        this.apiKeysError = error instanceof Error ? error.message : 'Failed to revoke API key'
+        throw error
+      }
+    },
+    async fetchEvents(accessToken: string, tenantId: string) {
+      this.eventsStatus = 'loading'
+      this.eventsError = null
+
+      try {
+        this.events = await listTenantEventsRequest(accessToken, tenantId)
+        this.eventsLoaded = true
+        this.eventsStatus = 'idle'
+        return this.events
+      } catch (error) {
+        this.eventsStatus = 'error'
+        this.eventsError = error instanceof Error ? error.message : 'Failed to load events'
+        throw error
+      }
+    },
+    async createEvent(
+      accessToken: string,
+      tenantId: string,
+      input: {
+        source: string
+        type: string
+        subject?: string
+        occurredAt: string
+        payload: Record<string, unknown>
+        metadata?: Record<string, unknown>
+        idempotencyKey?: string
+      },
+    ) {
+      this.eventsStatus = 'saving'
+      this.eventsError = null
+
+      try {
+        const event = await createTenantEventRequest(accessToken, tenantId, input)
+        if (this.eventsLoaded) {
+          upsertById(this.events, event)
+        }
+
+        this.eventsStatus = 'idle'
+        return event
+      } catch (error) {
+        this.eventsStatus = 'error'
+        this.eventsError = error instanceof Error ? error.message : 'Failed to create event'
         throw error
       }
     },

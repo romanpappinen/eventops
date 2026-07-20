@@ -4,7 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { routeNames } from '../core/navigation/routes'
 import { useAuthStore } from '../stores/auth'
 import { useTenantsStore } from '../stores/tenants'
-import type { TenantInvitation } from '../lib/api'
+import type { ApiKey, TenantInvitation } from '../lib/api'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -18,6 +18,15 @@ const inviteSuccess = ref<string | null>(null)
 const invitationActionError = ref<string | null>(null)
 const invitationActionSuccess = ref<string | null>(null)
 const pendingActionId = ref<string | null>(null)
+
+const apiKeyName = ref('')
+const apiKeyError = ref<string | null>(null)
+const lastCreatedApiKey = ref<ApiKey | null>(null)
+const copyFeedback = ref<string | null>(null)
+
+const apiKeyActionError = ref<string | null>(null)
+const apiKeyActionSuccess = ref<string | null>(null)
+const pendingApiKeyActionId = ref<string | null>(null)
 
 const tenantId = computed(() =>
   typeof route.params.tenantId === 'string' ? route.params.tenantId : '',
@@ -64,6 +73,12 @@ onMounted(async () => {
 
   try {
     await tenants.fetchInvitations(accessToken, tenantId.value)
+  } catch {
+    return
+  }
+
+  try {
+    await tenants.fetchApiKeys(accessToken, tenantId.value)
   } catch {
     return
   }
@@ -143,6 +158,69 @@ async function onRevoke(invitation: TenantInvitation) {
       error instanceof Error ? error.message : 'Failed to revoke invitation'
   } finally {
     pendingActionId.value = null
+  }
+}
+
+async function onCreateApiKey() {
+  apiKeyError.value = null
+  copyFeedback.value = null
+
+  const accessToken = auth.session?.access_token
+
+  if (!accessToken || !tenantId.value) {
+    apiKeyError.value = 'Your session is no longer available. Sign in again.'
+    return
+  }
+
+  try {
+    const apiKey = await tenants.createApiKey(accessToken, tenantId.value, apiKeyName.value)
+    apiKeyName.value = ''
+    lastCreatedApiKey.value = apiKey
+  } catch (error) {
+    apiKeyError.value = error instanceof Error ? error.message : 'Failed to create API key'
+  }
+}
+
+async function onCopyApiKey() {
+  if (!lastCreatedApiKey.value?.rawKey) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(lastCreatedApiKey.value.rawKey)
+    copyFeedback.value = 'Copied to clipboard.'
+  } catch {
+    copyFeedback.value = 'Could not copy automatically -- select and copy the key manually.'
+  }
+}
+
+async function onRevokeApiKey(apiKey: ApiKey) {
+  apiKeyActionError.value = null
+  apiKeyActionSuccess.value = null
+
+  if (!window.confirm(`Revoke the API key "${apiKey.name}"? Any integration using it will stop working immediately.`)) {
+    return
+  }
+
+  const accessToken = auth.session?.access_token
+
+  if (!accessToken || !tenantId.value) {
+    apiKeyActionError.value = 'Your session is no longer available. Sign in again.'
+    return
+  }
+
+  pendingApiKeyActionId.value = apiKey.id
+
+  try {
+    await tenants.revokeApiKey(accessToken, tenantId.value, apiKey.id)
+    apiKeyActionSuccess.value = `API key "${apiKey.name}" revoked.`
+    if (lastCreatedApiKey.value?.id === apiKey.id) {
+      lastCreatedApiKey.value = null
+    }
+  } catch (error) {
+    apiKeyActionError.value = error instanceof Error ? error.message : 'Failed to revoke API key'
+  } finally {
+    pendingApiKeyActionId.value = null
   }
 }
 </script>
@@ -315,6 +393,104 @@ async function onRevoke(invitation: TenantInvitation) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div class="tenant-card api-keys-card">
+        <p class="eyebrow">API keys</p>
+        <h2>Server-to-server ingestion</h2>
+        <p class="intro">
+          Use an API key to send events into this tenant from your own backend, without a human
+          Supabase session. Only tenant owners can create or revoke keys.
+        </p>
+
+        <form class="invite-form" @submit.prevent="onCreateApiKey">
+          <label>
+            <span>Key name</span>
+            <input v-model="apiKeyName" type="text" placeholder="Production backend" required />
+          </label>
+
+          <p v-if="apiKeyError || tenants.apiKeysError" class="feedback feedback-error">
+            {{ apiKeyError ?? tenants.apiKeysError }}
+          </p>
+
+          <div class="actions">
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="tenants.apiKeysStatus === 'saving'"
+            >
+              {{ tenants.apiKeysStatus === 'saving' ? 'Creating...' : 'Create API key' }}
+            </button>
+          </div>
+        </form>
+
+        <div v-if="lastCreatedApiKey?.rawKey" class="raw-key-panel">
+          <p class="raw-key-warning">
+            Copy this key now -- you will not be able to see it again.
+          </p>
+          <code class="raw-key-value">{{ lastCreatedApiKey.rawKey }}</code>
+          <div class="actions">
+            <button type="button" class="secondary-link" @click="onCopyApiKey">
+              Copy to clipboard
+            </button>
+            <span v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</span>
+          </div>
+        </div>
+
+        <p v-if="apiKeyActionError" class="feedback feedback-error">
+          {{ apiKeyActionError }}
+        </p>
+        <p v-if="apiKeyActionSuccess" class="feedback feedback-success">
+          {{ apiKeyActionSuccess }}
+        </p>
+
+        <p v-if="tenants.apiKeysStatus === 'loading'">Loading API keys...</p>
+
+        <p v-else-if="tenants.apiKeys.length === 0" class="intro">
+          No API keys yet. Create one above to start sending events from your backend.
+        </p>
+
+        <div v-else class="table-panel">
+          <table class="invitations-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Key prefix</th>
+                <th>Created</th>
+                <th>Last used</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="apiKey in tenants.apiKeys" :key="apiKey.id">
+                <td>{{ apiKey.name }}</td>
+                <td><code>{{ apiKey.keyPrefix }}...</code></td>
+                <td>{{ new Date(apiKey.createdAt).toLocaleString() }}</td>
+                <td>{{ apiKey.lastUsedAt ? new Date(apiKey.lastUsedAt).toLocaleString() : 'Never' }}</td>
+                <td>{{ apiKey.revokedAt ? 'Revoked' : 'Active' }}</td>
+                <td class="invitation-actions">
+                  <button
+                    v-if="!apiKey.revokedAt"
+                    type="button"
+                    class="table-link table-link-danger"
+                    :disabled="pendingApiKeyActionId === apiKey.id"
+                    @click="onRevokeApiKey(apiKey)"
+                  >
+                    Revoke
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <RouterLink
+          class="secondary-link events-link"
+          :to="{ name: routeNames.tenantEvents, params: { tenantId: tenantId } }"
+        >
+          View events log
+        </RouterLink>
       </div>
     </template>
   </section>
@@ -524,6 +700,40 @@ select {
 .table-link-danger {
   color: var(--danger);
   border-color: rgba(180, 35, 24, 0.24);
+}
+
+.raw-key-panel {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(21, 111, 72, 0.08);
+  border: 1px solid rgba(21, 111, 72, 0.2);
+  display: grid;
+  gap: 12px;
+}
+
+.raw-key-warning {
+  margin: 0;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.raw-key-value {
+  display: block;
+  word-break: break-all;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(29, 27, 23, 0.1);
+}
+
+.copy-feedback {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.events-link {
+  margin-top: 20px;
 }
 
 @media (max-width: 900px) {

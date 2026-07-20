@@ -455,6 +455,95 @@ live.
       Phase 7 in the roadmap, pointing at `render.yaml` and
       `docs/deployment.md` rather than duplicating their content.)
 
+## Functional completeness: server-to-server ingestion + events UI (planned 2026-07-14)
+
+Prompted by the user defining what "functionally complete" means for this
+project: register -> create tenant + invite members (both already done) ->
+**a tenant's own external backend can authenticate and send events into its
+tenant** -> events are attributed to whoever/whatever created them ->
+**tenant members can see an events log** in the UI. Investigation found two
+real gaps: `POST /tenants/:tenantId/events` only ever accepted a human
+Supabase JWT (no way for an external server to authenticate at all), and
+`apps/web` had zero UI for events despite the backend being fully
+implemented and tested since early in this project. Full design (reviewed
+via a Plan subagent against the actual codebase) recorded at
+`/home/node/.claude/plans/scalable-wiggling-sloth.md`.
+
+- [x] Migration `0017_api_keys.sql`: `api_keys` table (owner-only RLS via
+      the existing `is_active_tenant_owner` helper from migration `0013`;
+      no RPC needed -- single-table writes fit this repo's "RLS-first, RPC
+      only for multi-table writes" principle), plus
+      `events.created_by_api_key_id` nullable FK. Applied to the real local
+      Supabase stack; RLS verified live via a `DO`-block role-switching
+      probe (a first attempt using a single-statement `set_config('role',
+      ...)` trick gave a false positive -- `anon`/non-owner appeared to see
+      rows -- because a GUC change made mid-target-list isn't reliably
+      visible to a sibling subquery in the same statement; a real
+      sequential `SET ROLE` inside a `DO` block gave the correct 0/0/1
+      result for anon/outsider/owner).
+- [x] `packages/validation/src/request/api-keys.ts` + backend module
+      `apps/api/src/modules/api-keys/` (types/service/controller/routes),
+      mounted at `/tenants/:tenantId/api-keys`, owner-only
+      (`requireTenantAccess({minimumRole:'owner'})`, same chain shape as
+      invitation management). Key format `eo_live_<32 random bytes,
+      base64url>`, only `sha256(key)` ever stored, raw key returned once on
+      creation. No expiry by design (matches Stripe/GitHub; revoke is
+      manual) -- explicitly discussed and confirmed with the user rather
+      than assumed.
+- [x] `requireApiKey` middleware (`apps/api/src/middleware/require-api-key.ts`):
+      hash-lookup via `getSupabaseAdmin()` since there's no `auth.uid()` at
+      all in this flow (same category as `requireAuth`'s
+      `getSupabaseAuth().auth.getUser()` and the existing invitation
+      accept-token hash lookup). `last_used_at` bookkeeping is
+      fire-and-forget, never blocks the ingestion hot path.
+- [x] New root-mounted `POST /events` (tenant resolved *only* from the key,
+      never from client input -- confirmed by a test that a `tenantId` in
+      the body gets rejected by the existing `.strict()` schema before it
+      could ever be used), reusing `assertEventQuotaNotExceeded`/
+      `getExistingEventByIdempotencyKey` (now exported from
+      `events.service.ts`) against the admin client instead of duplicating
+      quota/idempotency logic. New `app.set('trust proxy', 1)` + a
+      dedicated IP-keyed rate limiter on `/events`, since this route sits
+      behind Render's proxy in production and is a realistic
+      key-brute-forcing target the per-tenant quota doesn't address.
+- [x] Mocked backend tests: 94/94 api tests passing (17 test files, 2 new:
+      `api-keys.test.ts`, `events-ingest.test.ts`), covering owner-only
+      403s, hash-never-returned, revoke idempotency, missing/unknown/revoked
+      key 401s, quota/idempotency/archived-tenant reuse on the new path.
+- [x] Live tests against the real local Supabase stack:
+      `api-keys.live.test.ts` (owner CRUD round trip, non-owner 403,
+      outsider RLS boundary) and `events-ingest.live.test.ts` (real
+      `POST /events` with only a raw key and zero Supabase session,
+      garbage-key 401, revoked-key 401) -- 22/22 live tests passing.
+- [x] Frontend: `apps/web/src/lib/api.ts` (`ApiKey`/`TenantEvent` types +
+      `listTenantApiKeys`/`createTenantApiKey`/`revokeTenantApiKey`/
+      `listTenantEvents`/`createTenantEvent`) and `stores/tenants.ts`
+      (`apiKeys`/`events` state + matching actions, same
+      status-flag/`upsertById` shape as invitations).
+- [x] Frontend: "API Keys" card in `TenantEditPage.vue` -- table (name,
+      prefix, created, last used, active/revoked), create form, one-time
+      raw-key reveal panel with a copy-to-clipboard button, revoke via
+      `window.confirm`, link to the new events page.
+- [x] Frontend: new `TenantEventsPage.vue` + `/tenants/:tenantId/events`
+      route (`routeNames.tenantEvents`) -- events table (source, type,
+      subject, occurred-at, status, attribution resolved to "You" /
+      "Another member" / "API: `<name>`") + a manual "create event" form
+      (payload/metadata JSON textareas with client-side `JSON.parse`
+      validation) using the existing human-JWT endpoint, unchanged.
+- [x] Frontend store tests: `tenants.store.test.ts` extended with 6 new
+      cases for `fetchApiKeys`/`createApiKey`/`revokeApiKey`/
+      `fetchEvents`/`createEvent` -- 12/12 web tests passing.
+- [x] Full verification pass: `apps/api` typecheck clean + 94/94 tests;
+      `apps/web` typecheck clean + 12/12 unit tests; new Playwright e2e
+      spec `apps/web/e2e/api-keys-events-flow.spec.ts` run against real
+      dev servers + real local Supabase -- registers a user, creates a
+      tenant, creates an API key, confirms the one-time raw-key reveal,
+      creates a manual event (attributed "You"), POSTs a real ingestion
+      request with only the raw key and zero Supabase session (201,
+      `createdByUserId: null`), confirms it shows up in the events table
+      attributed "API: `<name>`", revokes the key via the UI, confirms a
+      repeat ingestion request now gets 401. Passed on first run.
+
 ### 5. Event audit trail for tenants (not in the original README roadmap — new idea, lower priority)
 
 Came up 2026-07-11 while discussing observability: what was built there

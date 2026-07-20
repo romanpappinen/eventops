@@ -6,7 +6,13 @@ import type {
     TenantEventParamsDto,
 } from '@eventops/validation';
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
-import { createEventForTenant, getEventForTenant, listEventsForTenant } from './events.service.js';
+import type { ApiKeyAuthenticatedRequest } from '../../middleware/require-api-key.js';
+import {
+    createEventForTenant,
+    createEventViaApiKey,
+    getEventForTenant,
+    listEventsForTenant,
+} from './events.service.js';
 
 export async function listEvents(req: AuthenticatedRequest, res: Response) {
     const { tenantId } = req.params as TenantEventParamsDto;
@@ -47,5 +53,11 @@ export async function createEvent(req: AuthenticatedRequest, res: Response) {
         tenantId,
         req.body as CreateEventDto
     );
+    return res.status(result.replayed ? 200 : 201).json({ item: result.event });
+}
+
+export async function createEventForApiKey(req: ApiKeyAuthenticatedRequest, res: Response) {
+    const { id: apiKeyId, tenantId } = req.apiKey!;
+    const result = await createEventViaApiKey(tenantId, apiKeyId, req.body as CreateEventDto);
     return res.status(result.replayed ? 200 : 201).json({ item: result.event });
 }

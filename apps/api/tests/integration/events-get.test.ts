@@ -227,6 +227,7 @@ describe('GET /tenants/:tenantId/events/:eventId', () => {
                 metadata: { schemaVersion: 2 },
                 status: 'accepted',
                 createdByUserId: 'user-123',
+                createdByApiKeyId: null,
                 idempotencyKey: null,
                 createdAt: '2026-05-18T12:05:01.000Z',
                 updatedAt: '2026-05-18T12:05:01.000Z',

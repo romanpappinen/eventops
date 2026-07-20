@@ -1,5 +1,152 @@
 # Diary
 
+Date: 2026-07-20
+
+## What changed
+
+Finished the API keys + event ingestion + events UI feature (plan at
+`/home/node/.claude/plans/scalable-wiggling-sloth.md`), continuing from the
+backend-only state left at 2026-07-14 (11).
+
+* Live tests: `api-keys.live.test.ts` (owner CRUD round trip, non-owner 403,
+  outsider RLS boundary) and `events-ingest.live.test.ts` (real `POST
+  /events` with only a raw key and zero Supabase session, garbage-key 401,
+  revoked-key 401), against the real local Supabase stack -- 22/22 passing.
+* Frontend: `apps/web/src/lib/api.ts` gained `ApiKey`/`TenantEvent` types and
+  the five new request functions. Initially wrote these with a snake_case
+  `*Item` + mapper layer copying the `Tenant`/`TenantInvitation` pattern --
+  caught before committing that `api-keys.controller.ts`/
+  `events.controller.ts` already normalize to camelCase server-side
+  (`normalizeApiKeyRecord`/`normalizeEventRecord`), so the mapper layer was
+  wrong and removed; the wire format matches the frontend types directly.
+* `stores/tenants.ts`: new `apiKeys`/`events` state and
+  `fetchApiKeys`/`createApiKey`/`revokeApiKey`/`fetchEvents`/`createEvent`
+  actions, same status-flag + `upsertById` shape as the existing invitation
+  actions.
+* `TenantEditPage.vue`: new "API Keys" card -- create form, one-time raw-key
+  reveal panel (first use of `navigator.clipboard` in this repo, with a
+  fallback message if it throws), table with revoke, link to the new events
+  page.
+* New `TenantEventsPage.vue` + `/tenants/:tenantId/events` route: events
+  table with attribution resolved to "You" / "Another member" / "API:
+  `<name>`", plus a manual create-event form (payload/metadata JSON
+  textareas, client-side `JSON.parse` validation before submit).
+* `tenants.store.test.ts`: 6 new cases for the new actions, following the
+  existing mocked-`fetch` convention.
+* New Playwright e2e spec `apps/web/e2e/api-keys-events-flow.spec.ts`,
+  matching the existing `invitation-flow.spec.ts` convention (real browser,
+  real dev servers, real local Supabase). Covers the full loop end to end:
+  register -> create tenant -> create API key -> one-time reveal -> manual
+  event (attributed "You") -> real `POST /events` via `request.post()` with
+  only the raw key and zero Supabase session (201, `createdByUserId: null`)
+  -> reload -> ingested event shows "API: `<name>`" -> revoke via UI ->
+  repeat ingestion request now gets 401. Passed on the first run.
+
+## What was verified
+
+* `pnpm --filter @eventops/api typecheck` -- clean; `pnpm --filter
+  @eventops/api test` -- 94/94.
+* `pnpm --filter @eventops/web typecheck` -- clean; `pnpm --filter
+  @eventops/web test` -- 12/12 (was 6; +6 new store tests).
+* `pnpm --filter @eventops/web exec playwright test api-keys-events-flow`
+  -- 1/1 passing against real dev servers (api + web) and real local
+  Supabase, with screenshots confirming the raw-key reveal panel, the
+  events table, and the revoked-key state render as expected.
+
+## Next concrete step
+
+This feature is done -- `CHECKLIST.md` section 4 fully checked off. Commit
+this work, then return to whatever the next-highest-priority item on the
+roadmap is (deployment CI-gate section 4 in `docs/deployment.md` is the
+next documented-but-unimplemented piece, or the deprioritized event audit
+trail idea in `CHECKLIST.md` section 5 -- ask the user which to pick up
+next rather than assuming).
+
+---
+
+Date: 2026-07-14 (11)
+
+## What changed
+
+New scope, defined directly by the user: what does "functionally complete"
+mean for this project? Answer: register -> create tenant + invite members
+(done) -> a tenant's own external backend can authenticate and send events
+into its tenant -> events are attributed correctly -> tenant members can see
+an events log in the UI. Investigation surfaced two real gaps: `POST
+/tenants/:tenantId/events` only ever accepted a human Supabase JWT (no
+server-to-server auth path existed at all), and `apps/web` had no events UI
+whatsoever despite the backend being done and tested for a while. Planned
+via a formal plan-mode pass (design reviewed by a Plan subagent against the
+real codebase before coding) -- full plan at
+`/home/node/.claude/plans/scalable-wiggling-sloth.md`. Recorded as a new
+section in `CHECKLIST.md`.
+
+Backend work completed so far (this entry):
+
+* Migration `0017_api_keys.sql`: new `api_keys` table, owner-only RLS
+  (reusing the `is_active_tenant_owner` helper from migration `0013`, no
+  RPC needed since these are single-table writes), plus a nullable
+  `events.created_by_api_key_id` FK for attribution alongside the existing
+  `created_by_user_id`. Applied to the real local Supabase stack.
+* Live RLS verification hit a real methodology snag worth remembering: a
+  single-statement `select set_config('role','anon',false), (select
+  count(*) from api_keys)` trick gave a **false positive** (anon appeared
+  to see a row that no policy grants it) -- a GUC change made by one
+  expression in a target list isn't reliably visible to a sibling subquery
+  evaluated in the same statement. Switched to a `DO $$ ... $$` block doing
+  a real sequential `SET ROLE` + `SELECT ... INTO` + `RAISE EXCEPTION`
+  (to surface the count via the CLI's error output, since `supabase db
+  query` doesn't support multi-statement scripts or persist session state
+  across separate invocations) -- this gave the correct result: anon=0,
+  non-owner-authenticated=0, owner=1.
+* New backend module `apps/api/src/modules/api-keys/` (types/service/
+  controller/routes), mounted at `/tenants/:tenantId/api-keys`, owner-only.
+  Key format `eo_live_<32 random bytes>`, only the sha256 hash is ever
+  stored, raw key returned once on creation. Discussed key security
+  explicitly with the user before coding (256-bit entropy makes brute force
+  infeasible regardless of hash speed, unlike password hashing; main
+  accepted limitation is no expiry -- matches Stripe/GitHub, revoke is
+  manual).
+* `requireApiKey` middleware: hash-lookup via `getSupabaseAdmin()` (no
+  `auth.uid()` exists in this flow at all), same category as the existing
+  invitation accept-token hash lookup. `last_used_at` update is
+  fire-and-forget, never blocks the ingestion request.
+* New root-mounted `POST /events`: tenant resolved only from the key
+  (confirmed by a test that a `tenantId` in the body gets rejected by the
+  existing `.strict()` schema before it could ever reach the handler).
+  Reuses `assertEventQuotaNotExceeded`/`getExistingEventByIdempotencyKey`
+  (now exported) against the admin client instead of duplicating quota/
+  idempotency logic for the new path. Added `app.set('trust proxy', 1)` +
+  a dedicated rate limiter on `/events` -- a design-review subagent caught
+  that without `trust proxy`, `express-rate-limit`'s IP keying would
+  collapse onto Render's proxy address once deployed, rate-limiting every
+  tenant's ingestion traffic as one shared bucket.
+
+## What was verified
+
+* `pnpm --filter @eventops/api typecheck` -- clean.
+* `pnpm --filter @eventops/api test` -- 94/94 (was 77; +17 new across two
+  files, `api-keys.test.ts` and `events-ingest.test.ts`): owner-only 403s,
+  hash never returned to the client, revoke is idempotent, 401 for
+  missing/unknown/revoked keys, 201/200/409/429 all correctly reused on the
+  new ingestion path.
+* Live RLS probe against the real local Supabase stack (see above) --
+  anon and non-owner members cannot see `api_keys` rows; the owner can.
+
+## Next concrete step
+
+Still in progress, per the plan and the new `CHECKLIST.md` section:
+finish the live test suite (a real ingestion round trip with a raw key and
+zero Supabase session, plus a revoked-key 401 check), then the frontend
+(`apps/web/src/lib/api.ts` + store additions, an "API Keys" card in
+`TenantEditPage.vue`, a new `TenantEventsPage.vue` with a log + manual
+create-event form, frontend store tests), then a full verification pass
+(typecheck/test everywhere, manual browser + `curl` click-through
+simulating a real external backend) before committing. Going through the
+checklist section in order.
+
+---
+
 Date: 2026-07-14 (10)
 
 ## What changed
