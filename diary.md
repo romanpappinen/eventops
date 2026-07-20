@@ -1,5 +1,41 @@
 # Diary
 
+Date: 2026-07-20 (2)
+
+## What changed
+
+User hit `ERR_CONNECTION_REFUSED` on `POST http://localhost:3000/auth/register`
+while testing the new API-keys/events UI in a real browser. Root cause: this
+is a remote/devcontainer session where only the web app's port (5173) is
+forwarded to the browser -- `apps/web/src/lib/api.ts` hardcoded
+`http://localhost:3000` as the API base URL by default, which doesn't exist
+from the browser's point of view. Fixed by adding a Vite dev-server proxy
+(`apps/web/vite.config.ts`) for the API's route prefixes (`/auth`,
+`/invitations`, `/events`, `/tenants`) and defaulting the base URL to a
+relative path when `import.meta.env.MODE === 'development'` (not `DEV` --
+vitest also sets `DEV=true` for its own `'test'` mode, which broke 11/12
+store tests on the first attempt before switching to `MODE`). Production is
+unaffected since `VITE_API_URL` is always set explicitly there (`render.yaml`).
+
+## What was verified
+
+* `pnpm --filter @eventops/web typecheck` -- clean.
+* `pnpm --filter @eventops/web test` -- 12/12 (after switching `DEV` to
+  `MODE === 'development'`).
+* Restarted the dev servers (they had stopped running) and confirmed with
+  `curl` that `POST http://localhost:5173/auth/register` and
+  `GET http://localhost:5173/tenants` now reach the API through the proxy
+  (400/401, not connection-refused) instead of requiring port 3000 to be
+  separately forwarded.
+
+## Next concrete step
+
+Ask the user to confirm the browser-based flow now works end to end on
+their side; the underlying feature work (API keys + events) is otherwise
+already complete and committed (see the entry below).
+
+---
+
 Date: 2026-07-20
 
 ## What changed
