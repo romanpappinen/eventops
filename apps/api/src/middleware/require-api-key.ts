@@ -28,6 +28,7 @@ export async function requireApiKey(req: ApiKeyAuthenticatedRequest, res: Respon
             .maybeSingle();
 
         if (error) {
+            req.log?.error({ err: error }, 'API key lookup failed');
             return res.status(503).json({ error: 'Auth service unavailable' });
         }
 
@@ -45,7 +46,8 @@ export async function requireApiKey(req: ApiKeyAuthenticatedRequest, res: Respon
             .then(null, () => undefined);
 
         next();
-    } catch {
+    } catch (err) {
+        req.log?.error({ err }, 'API key lookup threw');
         return res.status(503).json({ error: 'Auth service unavailable' });
     }
 }
