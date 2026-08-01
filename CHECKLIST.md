@@ -724,3 +724,46 @@ me diagnosing failures from logs and shipping fixes as normal commits:
       keeping Render's default auto-deploy on push to `main`. See the
       "Deployment prep" section above for the technical plan if this
       changes later.
+
+## Redis-backed rate limiting (done 2026-08-01)
+
+`REDIS_URL` was a required, validated env var with a provisioned Render
+Key Value instance, but nothing in the codebase ever used it -- a real
+gap flagged while writing the README. `createRateLimiter`
+(`apps/api/src/middleware/rate-limit.ts`) previously always used
+`express-rate-limit`'s default in-memory store, which only enforces a
+limit correctly for a single process: Render lets a Starter-plan
+service scale to multiple instances by hand (confirmed via Render's own
+docs, no plan upgrade needed), and each instance would keep its own
+separate counter, silently multiplying the effective limit by the
+instance count.
+
+- [x] Added `ioredis` + `rate-limit-redis@4.2.3` (pinned below the
+      latest major, which requires `express-rate-limit >= 8.6.0` while
+      this repo is on `7.5.1` -- confirmed via `npm view` peer deps
+      rather than guessing) to `apps/api`.
+- [x] New `apps/api/src/lib/redis.ts`: a lazy singleton `ioredis` client
+      (unlike the per-call Supabase client helpers in the same
+      directory -- ioredis holds a real TCP socket, worth keeping one
+      around), with an `error` listener that logs via the structured
+      logger instead of letting an unhandled `EventEmitter` error crash
+      the process on a transient Redis blip.
+- [x] `createRateLimiter` now passes a `RedisStore` (from
+      `rate-limit-redis`) wired to that client, **except** when
+      `NODE_ENV === 'test'`, where it falls back to the untouched
+      default in-memory store -- there is no Redis available in the
+      test environment, and the existing `rate-limit.test.ts` already
+      exercises the actual limiting behavior end to end against that
+      default store.
+- [x] New `apps/api/tests/unit/rate-limit-store.test.ts`: mocks
+      `express-rate-limit`, `rate-limit-redis`, and the new
+      `lib/redis.js` to assert the store selection itself (in-memory in
+      test, a `RedisStore` with a `sendCommand` function otherwise)
+      without needing a real Redis connection.
+- Live verification against a real Redis was intentionally **not**
+  attempted in this sandbox -- no Docker/root available to run one, and
+  installing an arbitrary `redis-server` binary from an unfamiliar
+  source into the sandbox was explicitly rejected as an unnecessary
+  risk. The wiring is exercised for real once deployed, against the
+  `eventops-redis` instance that already exists in production.
+- Verified: `apps/api` typecheck clean, 103/103 tests (2 new).

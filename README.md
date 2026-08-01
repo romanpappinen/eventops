@@ -45,12 +45,12 @@ This is deployed as a real, live system (Render + a production Supabase project)
 * Zod for request/response and environment validation
 * `@supabase/supabase-js` (both a user-context client, for RLS-scoped requests, and a service-role admin client)
 * `pino` / `pino-http` for structured JSON logging and per-request IDs
-* `express-rate-limit` on registration, invitation acceptance/resend, and event ingestion
+* `express-rate-limit` on registration, invitation acceptance/resend, and event ingestion, backed by a shared Redis store (`ioredis` + `rate-limit-redis`) so the limit is enforced correctly across multiple instances of the API rather than per-process
 
 ### Background Worker (`apps/worker`)
 * Node.js, TypeScript, `tsx`
 * Three independent poll loops running concurrently: invitation email delivery, invitation/job cleanup, and event processing
-* Talks to Supabase directly over PostgREST (no queue library) — `REDIS_URL` is a required, validated environment variable and a Render Key Value instance is provisioned, but nothing in the codebase uses it yet; it exists for future queue-backed work, not current background processing
+* Talks to Supabase directly over PostgREST — no queue library here; `REDIS_URL` is required by the worker's env schema but the worker itself doesn't use it (only `apps/api` does, for rate limiting)
 
 ### Database & Auth
 * Supabase (Postgres + Auth/GoTrue)
