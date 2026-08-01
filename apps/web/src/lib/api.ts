@@ -61,6 +61,14 @@ export interface TenantEvent {
   updatedAt: string
 }
 
+export interface EventStats {
+  windowDays: number
+  total: number
+  accepted: number
+  processed: number
+  failed: number
+}
+
 export interface InvitationAcceptDetails {
   invitationId: string
   tenantId: string
@@ -161,6 +169,10 @@ interface TenantEventResponse {
 
 interface TenantEventsResponse {
   items: TenantEvent[]
+}
+
+interface EventStatsResponse {
+  item: EventStats
 }
 
 interface MembershipAcceptResponse {
@@ -443,6 +455,21 @@ export async function listTenantEvents(accessToken: string, tenantId: string) {
   }
 
   return body.items
+}
+
+export async function getTenantEventStats(accessToken: string, tenantId: string, windowDays: number) {
+  const response = await fetch(
+    `${getApiBaseUrl()}/tenants/${tenantId}/events/stats?windowDays=${windowDays}`,
+    { headers: createAuthHeaders(accessToken) },
+  )
+
+  const body = await parseJson<Partial<EventStatsResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to load event stats')
+  }
+
+  return body.item
 }
 
 export async function createTenantEvent(

@@ -3,6 +3,7 @@ import { ApiError } from '../../lib/api-error.js';
 import { getSupabaseAdmin, getSupabaseUser } from '../../lib/supabase.js';
 import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
 import type { CreateEventDto, ListEventsQueryDto } from '@eventops/validation';
+import type { EventStatus } from '@eventops/shared';
 import { normalizeEventRecord } from './events.types.js';
 
 const eventSelectFields =
@@ -56,6 +57,40 @@ export async function listEventsForTenant(
     }
 
     return (data ?? []).map(normalizeEventRecord);
+}
+
+export async function getEventStatsForTenant(authToken: string, tenantId: string, windowDays: number) {
+    const supabaseUser = getSupabaseUser(authToken);
+    const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const countByStatus = async (status: EventStatus) => {
+        const { count, error } = await supabaseUser
+            .from('events')
+            .select('id', { count: 'exact', head: true })
+            .eq('tenant_id', tenantId)
+            .eq('status', status)
+            .gte('created_at', cutoff);
+
+        if (error) {
+            throw new ApiError(502, 'Failed to load event stats');
+        }
+
+        return count ?? 0;
+    };
+
+    const [accepted, processed, failed] = await Promise.all([
+        countByStatus('accepted'),
+        countByStatus('processed'),
+        countByStatus('failed'),
+    ]);
+
+    return {
+        windowDays,
+        total: accepted + processed + failed,
+        accepted,
+        processed,
+        failed,
+    };
 }
 
 export async function getEventForTenant(authToken: string, tenantId: string, eventId: string) {

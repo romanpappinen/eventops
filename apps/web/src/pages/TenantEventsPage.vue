@@ -27,6 +27,16 @@ const tenantId = computed(() =>
 
 const tenant = computed(() => tenants.getById(tenantId.value))
 
+const windowDays = ref(7)
+
+const failureRate = computed(() => {
+  const stats = tenants.eventStats
+  if (!stats || stats.total === 0) {
+    return 0
+  }
+  return (stats.failed / stats.total) * 100
+})
+
 function attribution(event: TenantEvent) {
   if (event.createdByApiKeyId) {
     const apiKey = tenants.apiKeys.find((key) => key.id === event.createdByApiKeyId)
@@ -59,6 +69,7 @@ onMounted(async () => {
     await Promise.all([
       tenants.fetchEvents(accessToken, tenantId.value),
       tenants.fetchApiKeys(accessToken, tenantId.value),
+      tenants.fetchEventStats(accessToken, tenantId.value, windowDays.value),
     ])
   } catch {
     return
@@ -73,7 +84,26 @@ async function onRefreshEvents() {
   }
 
   try {
-    await tenants.fetchEvents(accessToken, tenantId.value)
+    await Promise.all([
+      tenants.fetchEvents(accessToken, tenantId.value),
+      tenants.fetchEventStats(accessToken, tenantId.value, windowDays.value),
+    ])
+  } catch {
+    return
+  }
+}
+
+async function onSelectWindow(days: number) {
+  windowDays.value = days
+
+  const accessToken = auth.session?.access_token
+
+  if (!accessToken || !tenantId.value) {
+    return
+  }
+
+  try {
+    await tenants.fetchEventStats(accessToken, tenantId.value, days)
   } catch {
     return
   }
@@ -170,6 +200,57 @@ async function onCreateEvent() {
         >
           Back to tenant settings
         </RouterLink>
+      </div>
+
+      <div class="tenant-card">
+        <p class="eyebrow">Stats</p>
+        <h2>How ingestion is doing</h2>
+
+        <div class="window-buttons">
+          <button
+            v-for="option in [
+              { days: 1, label: '24h' },
+              { days: 7, label: '7d' },
+              { days: 30, label: '30d' },
+            ]"
+            :key="option.days"
+            type="button"
+            class="window-button"
+            :class="{ active: windowDays === option.days }"
+            @click="onSelectWindow(option.days)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+
+        <p v-if="tenants.eventStatsStatus === 'loading'">Loading stats...</p>
+
+        <p v-else-if="tenants.eventStatsError" class="feedback feedback-error">
+          {{ tenants.eventStatsError }}
+        </p>
+
+        <div v-else-if="tenants.eventStats" class="stats-grid">
+          <div class="stat">
+            <span class="stat-value">{{ tenants.eventStats.total }}</span>
+            <span class="stat-label">Total</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{{ tenants.eventStats.processed }}</span>
+            <span class="stat-label">Processed</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{{ tenants.eventStats.failed }}</span>
+            <span class="stat-label">Failed</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{{ tenants.eventStats.accepted }}</span>
+            <span class="stat-label">In queue</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value">{{ failureRate.toFixed(1) }}%</span>
+            <span class="stat-label">Failure rate</span>
+          </div>
+        </div>
       </div>
 
       <div class="tenant-card">
@@ -366,6 +447,56 @@ h2 {
   color: var(--danger);
   font-size: 12px;
   font-weight: 600;
+}
+
+.window-buttons {
+  margin-top: 20px;
+  display: flex;
+  gap: 8px;
+}
+
+.window-button {
+  min-height: 40px;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-weight: 700;
+  border: 1px solid rgba(29, 27, 23, 0.12);
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.window-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.stats-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 16px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--ink);
+  font-family: var(--font-display);
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .event-form {
