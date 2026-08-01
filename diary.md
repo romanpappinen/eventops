@@ -1,5 +1,72 @@
 # Diary
 
+Date: 2026-08-01
+
+## What changed
+
+First real production deployment. User clicked through Render/Supabase/
+GitHub dashboards (I have no credentials for any of them in this sandbox);
+I diagnosed failures from pasted logs and shipped fixes as normal commits
+on `feature/next-small-task`, each going through the now-working
+PR -> CI -> merge path.
+
+Three real bugs found and fixed along the way, all confirmed only once
+real (non-mocked, non-local) infrastructure was in play:
+
+1. `render.yaml`'s `REDIS_URL` `fromService` entries were missing a
+   `type: keyvalue` field Render's Blueprint validator now requires.
+2. `corepack enable` in every service's `buildCommand` broke the
+   `eventops-web` static-site build (`EROFS`, read-only `/usr/bin`) and
+   was redundant anyway -- Render already installs the pnpm version
+   pinned in `package.json`'s `packageManager` field before running the
+   build command. Dropped it from all three services.
+3. Two rounds of the same underlying issue: Supabase's "Automatically
+   expose new tables" dashboard setting, and `service_role`'s usual
+   default full-table-access, both apparently only apply to tables that
+   existed when the hosted project was created -- anything added later
+   via `supabase db push` (i.e. every table in this repo, added via
+   migrations after the fact) got no base grants at all. First hit as
+   `authenticated` getting `permission denied for table users` when
+   creating a tenant; fixed with migration
+   `0019_grant_public_table_privileges.sql`. Second hit as `service_role`
+   getting `permission denied for table api_keys` on a real
+   `POST /events` call; fixed with
+   `0020_grant_service_role_table_privileges.sql`. Both grant
+   `select/insert/update/delete` explicitly (RLS, already enabled on
+   every table, is what actually restricts row access) and set default
+   privileges so future tables can't hit the same gap.
+
+Also found and fixed a real observability gap while debugging bug #3:
+`require-api-key.ts` swallowed the underlying Supabase error on a failed
+lookup and always returned a generic 503 with nothing logged -- unlike
+`errorHandler`, which already logs everything via `req.log`. Added
+`req.log?.error(...)` in both the `if (error)` and `catch` branches.
+
+## What was verified
+
+Full live round trip against the real production stack: registered a
+real user through the deployed `eventops-web` UI, confirmed email
+confirmation + auto-login, created a tenant (this is what first hit
+bug #3 above), created an API key, sent a small event and a ~40KB event
+via `POST /events` with only the raw API key and zero Supabase session,
+refreshed the real UI, and confirmed both events reached the correct
+terminal status (`processed` / `failed` with the exact expected
+`failureReason` text), correctly attributed to the API key by name. The
+test API key was revoked immediately after (it had been pasted in
+plaintext in chat during debugging).
+
+User explicitly declined the optional CI deploy-approval gate
+(`docs/deployment.md` section 4) -- keeping Render's default auto-deploy
+on push to `main`. Not a gap, a decision; revisit only if asked.
+
+## Next concrete step
+
+Nothing outstanding from this deployment push. Remaining open items are
+long-standing, deliberately deprioritized ones: real linting (`lint`
+scripts are still `echo` placeholders) and metrics/dashboard-style
+observability. Both are tracked in `CHECKLIST.md`, neither blocking
+anything.
+
 Date: 2026-07-20 (4)
 
 ## What changed
