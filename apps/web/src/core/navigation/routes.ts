@@ -3,8 +3,10 @@ import HomePage from '../../pages/HomePage.vue'
 import InvitationAcceptPage from '../../pages/InvitationAcceptPage.vue'
 import LoginPage from '../../pages/LoginPage.vue'
 import RegisterPage from '../../pages/RegisterPage.vue'
+import DocsIngestionPage from '../../pages/DocsIngestionPage.vue'
 import TenantCreatePage from '../../pages/TenantCreatePage.vue'
 import TenantEditPage from '../../pages/TenantEditPage.vue'
+import TenantEventsPage from '../../pages/TenantEventsPage.vue'
 import TenantsPage from '../../pages/TenantsPage.vue'
 
 export const routeNames = {
@@ -15,6 +17,8 @@ export const routeNames = {
   tenants: 'tenants',
   tenantCreate: 'tenantCreate',
   tenantEdit: 'tenantEdit',
+  tenantEvents: 'tenantEvents',
+  docsIngestion: 'docsIngestion',
 } as const
 
 export const routes: RouteRecordRaw[] = [
@@ -49,6 +53,24 @@ export const routes: RouteRecordRaw[] = [
     path: '/tenants/:tenantId/edit',
     name: routeNames.tenantEdit,
     component: TenantEditPage,
+    meta: {
+      layout: 'default',
+      requiresAuth: true,
+    },
+  },
+  {
+    path: '/tenants/:tenantId/events',
+    name: routeNames.tenantEvents,
+    component: TenantEventsPage,
+    meta: {
+      layout: 'default',
+      requiresAuth: true,
+    },
+  },
+  {
+    path: '/docs/ingestion',
+    name: routeNames.docsIngestion,
+    component: DocsIngestionPage,
     meta: {
       layout: 'default',
       requiresAuth: true,

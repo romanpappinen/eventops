@@ -1,14 +1,37 @@
+import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import express from 'express';
+import pinoHttp from 'pino-http';
+import { createLogger } from '@eventops/logger';
 import { getHealthMessage } from '@eventops/shared';
 import { errorHandler } from './middleware/error-handler.js';
+import { createRateLimiter } from './middleware/rate-limit.js';
 import { eventsRouter } from './modules/events/events.routes.js';
+import { eventsIngestRouter } from './modules/events/events-ingest.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
 import { invitationsRouter } from './modules/invitations/invitations.routes.js';
 import {tenantsRouter} from "./modules/tenants/tenants.routes";
+import { apiKeysRouter } from './modules/api-keys/api-keys.routes.js';
 
 export function createApp() {
     const app = express();
+
+    // Render (and most PaaS providers) sit behind a reverse proxy -- without
+    // this, express-rate-limit's IP keying collapses onto the proxy's own
+    // address instead of each caller's real IP.
+    app.set('trust proxy', 1);
+
+    app.use(
+        pinoHttp({
+            logger: createLogger('api'),
+            genReqId: (req, res) => {
+                const header = req.headers['x-request-id'];
+                const id = typeof header === 'string' && header.trim() ? header.trim() : randomUUID();
+                res.setHeader('X-Request-Id', id);
+                return id;
+            },
+        })
+    );
 
     app.use(cors());
     app.use(express.json());
@@ -20,9 +43,37 @@ export function createApp() {
         });
     });
 
+    const authRegisterLimiter = createRateLimiter({
+        windowMs: 15 * 60 * 1000,
+        max: 20,
+        message: 'Too many registration attempts. Try again later.',
+    });
+    const invitationAcceptLimiter = createRateLimiter({
+        windowMs: 15 * 60 * 1000,
+        max: 30,
+        message: 'Too many invitation requests. Try again later.',
+    });
+    const invitationResendLimiter = createRateLimiter({
+        windowMs: 15 * 60 * 1000,
+        max: 10,
+        message: 'Too many resend requests. Try again later.',
+    });
+    const eventsIngestLimiter = createRateLimiter({
+        windowMs: 60 * 1000,
+        max: 120,
+        message: 'Too many event ingestion requests. Try again later.',
+    });
+
+    app.use('/auth/register', authRegisterLimiter);
+    app.use('/invitations/accept', invitationAcceptLimiter);
+    app.use('/tenants/:tenantId/invitations/:invitationId/resend', invitationResendLimiter);
+    app.use('/events', eventsIngestLimiter);
+
     app.use('/auth', authRouter);
     app.use('/invitations', invitationsRouter);
+    app.use('/events', eventsIngestRouter);
     app.use('/tenants/:tenantId/events', eventsRouter);
+    app.use('/tenants/:tenantId/api-keys', apiKeysRouter);
     app.use('/tenants', tenantsRouter);
     app.use(errorHandler);
 

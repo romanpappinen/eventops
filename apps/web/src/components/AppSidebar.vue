@@ -19,20 +19,25 @@ async function handleLogout() {
 
 <template>
   <aside class="sidebar">
-    <div>
-      <p class="sidebar-eyebrow">EventOps</p>
-      <h1 class="sidebar-title">Control panel</h1>
-      <p class="sidebar-user">{{ userLabel }}</p>
-    </div>
+    <div class="sidebar-top">
+      <div>
+        <p class="sidebar-eyebrow">EventOps</p>
+        <h1 class="sidebar-title">Control panel</h1>
+        <p class="sidebar-user">{{ userLabel }}</p>
+      </div>
 
-    <nav class="sidebar-nav" aria-label="Primary">
-      <RouterLink class="nav-link" :to="{ name: routeNames.home }">
-        Home
-      </RouterLink>
-      <RouterLink class="nav-link" :to="{ name: routeNames.tenants }">
-        Tenants
-      </RouterLink>
-    </nav>
+      <nav class="sidebar-nav" aria-label="Primary">
+        <RouterLink class="nav-link" :to="{ name: routeNames.home }">
+          Home
+        </RouterLink>
+        <RouterLink class="nav-link" :to="{ name: routeNames.tenants }">
+          Tenants
+        </RouterLink>
+        <RouterLink class="nav-link" :to="{ name: routeNames.docsIngestion }">
+          API docs
+        </RouterLink>
+      </nav>
+    </div>
 
     <button class="logout-button" type="button" @click="handleLogout">
       Logout
@@ -44,13 +49,22 @@ async function handleLogout() {
 .sidebar {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 24px;
+  min-height: 100vh;
   padding: 28px 22px;
   border-right: 1px solid rgba(29, 27, 23, 0.12);
   background:
     linear-gradient(180deg, rgba(255, 250, 242, 0.94) 0%, rgba(243, 232, 217, 0.92) 100%);
   backdrop-filter: blur(18px);
+}
+
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.logout-button {
+  margin-top: auto;
 }
 
 .sidebar-eyebrow {

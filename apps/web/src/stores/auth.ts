@@ -50,7 +50,9 @@ export const useAuthStore = defineStore('auth', {
     },
   },
   actions: {
-    async applySession(session: Session | null) {
+    async applySession(session: Session | null, options?: { silentOnUnauthorized?: boolean }) {
+      const silentOnUnauthorized = options?.silentOnUnauthorized ?? true
+
       this.session = session
       this.supabaseUser = session?.user ?? null
 
@@ -67,7 +69,7 @@ export const useAuthStore = defineStore('auth', {
         const message =
           currentUserError instanceof Error ? currentUserError.message : 'Failed to load current user'
 
-        if (message === 'Unauthorized') {
+        if (message === 'Unauthorized' && silentOnUnauthorized) {
           await clearBrokenSession()
           this.session = null
           this.supabaseUser = null
@@ -162,7 +164,7 @@ export const useAuthStore = defineStore('auth', {
         return false
       }
 
-      await this.applySession(data.session)
+      await this.applySession(data.session, { silentOnUnauthorized: false })
       this.initialized = true
       return this.isAuthenticated
     },

@@ -24,6 +24,27 @@ afterEach(() => {
     vi.clearAllMocks();
 });
 
+function mockMembership(options?: { role?: string; status?: string } | null) {
+    const maybeSingle = vi.fn().mockResolvedValue({
+        data:
+            options === null
+                ? null
+                : {
+                      id: 'membership-123',
+                      tenant_id: tenantId,
+                      role: options?.role ?? 'member',
+                      status: options?.status ?? 'active',
+                  },
+        error: null,
+    });
+    const eqStatus = vi.fn(() => ({ maybeSingle }));
+    const eqUser = vi.fn(() => ({ eq: eqStatus }));
+    const eqTenant = vi.fn(() => ({ eq: eqUser }));
+    const select = vi.fn(() => ({ eq: eqTenant }));
+
+    return { select };
+}
+
 describe('GET /tenants/:tenantId/events', () => {
     it('returns 401 when no bearer token is provided', async () => {
         const app = createApp();
@@ -72,6 +93,14 @@ describe('GET /tenants/:tenantId/events', () => {
             error: null,
         });
 
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
+            return { select: vi.fn() };
+        });
+
         const app = createApp();
 
         const response = await request(app)
@@ -81,6 +110,38 @@ describe('GET /tenants/:tenantId/events', () => {
         expect(response.status).toBe(400);
         expect(response.body).toMatchObject({
             error: 'Invalid request',
+        });
+    });
+
+    it('returns 404 when the authenticated user is not an active tenant member', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'member@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership(null);
+            }
+
+            return { select: vi.fn() };
+        });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .get(`/tenants/${tenantId}/events`)
+            .set('Authorization', 'Bearer valid-token');
+
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({
+            error: 'Tenant not found',
         });
     });
 
@@ -105,6 +166,10 @@ describe('GET /tenants/:tenantId/events', () => {
         const select = vi.fn(() => ({ eq }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'events') {
                 return { select };
             }
@@ -179,6 +244,10 @@ describe('GET /tenants/:tenantId/events', () => {
         const select = vi.fn(() => ({ eq }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'events') {
                 return { select };
             }
@@ -210,7 +279,9 @@ describe('GET /tenants/:tenantId/events', () => {
                     metadata: { schemaVersion: 2 },
                     status: 'accepted',
                     createdByUserId: 'user-123',
+                    createdByApiKeyId: null,
                     idempotencyKey: null,
+                    failureReason: null,
                     createdAt: '2026-05-18T12:05:01.000Z',
                     updatedAt: '2026-05-18T12:05:01.000Z',
                 },
@@ -226,7 +297,9 @@ describe('GET /tenants/:tenantId/events', () => {
                     metadata: {},
                     status: 'accepted',
                     createdByUserId: 'user-123',
+                    createdByApiKeyId: null,
                     idempotencyKey: null,
+                    failureReason: null,
                     createdAt: '2026-05-18T12:00:01.000Z',
                     updatedAt: '2026-05-18T12:00:01.000Z',
                 },
@@ -257,6 +330,10 @@ describe('GET /tenants/:tenantId/events', () => {
         const select = vi.fn(() => ({ eq }));
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'events') {
                 return { select };
             }

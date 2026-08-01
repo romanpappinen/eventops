@@ -20,7 +20,9 @@ describe('normalizeEventRecord', () => {
             },
             status: 'accepted',
             created_by_user_id: 'user-123',
+            created_by_api_key_id: null,
             idempotency_key: null,
+            failure_reason: null,
             created_at: '2026-05-18T12:00:01.000Z',
             updated_at: '2026-05-18T12:00:01.000Z',
         });
@@ -42,7 +44,9 @@ describe('normalizeEventRecord', () => {
             },
             status: 'accepted',
             createdByUserId: 'user-123',
+            createdByApiKeyId: null,
             idempotencyKey: null,
+            failureReason: null,
             createdAt: '2026-05-18T12:00:01.000Z',
             updatedAt: '2026-05-18T12:00:01.000Z',
         });

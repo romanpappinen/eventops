@@ -14,6 +14,13 @@ export const createEventDtoSchema = z.object({
     occurredAt: z.string().datetime({ offset: true }),
     payload: eventObjectSchema,
     metadata: eventObjectSchema.optional().default({}),
+    idempotencyKey: z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .optional()
+        .transform((value) => (value && value.length > 0 ? value : undefined)),
 }).strict();
 
 export type CreateEventDto = z.infer<typeof createEventDtoSchema>;

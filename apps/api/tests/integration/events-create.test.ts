@@ -37,6 +37,35 @@ function mockTenantStatus(status: 'active' | 'archived' = 'active') {
     return { select };
 }
 
+function mockEventQuota(count = 0) {
+    const gte = vi.fn().mockResolvedValue({ count, error: null });
+    const eq = vi.fn(() => ({ gte }));
+    const select = vi.fn(() => ({ eq }));
+
+    return { select, eq, gte };
+}
+
+function mockMembership(options?: { role?: string; status?: string } | null) {
+    const maybeSingle = vi.fn().mockResolvedValue({
+        data:
+            options === null
+                ? null
+                : {
+                      id: 'membership-123',
+                      tenant_id: tenantId,
+                      role: options?.role ?? 'member',
+                      status: options?.status ?? 'active',
+                  },
+        error: null,
+    });
+    const eqStatus = vi.fn(() => ({ maybeSingle }));
+    const eqUser = vi.fn(() => ({ eq: eqStatus }));
+    const eqTenant = vi.fn(() => ({ eq: eqUser }));
+    const select = vi.fn(() => ({ eq: eqTenant }));
+
+    return { select };
+}
+
 describe('POST /tenants/:tenantId/events', () => {
     it('returns 401 when no bearer token is provided', async () => {
         const app = createApp();
@@ -100,6 +129,14 @@ describe('POST /tenants/:tenantId/events', () => {
             error: null,
         });
 
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
+            return { insert: vi.fn(), select: vi.fn() };
+        });
+
         const app = createApp();
 
         const response = await request(app)
@@ -130,6 +167,46 @@ describe('POST /tenants/:tenantId/events', () => {
             error: null,
         });
 
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership(null);
+            }
+
+            return { insert: vi.fn(), select: vi.fn() };
+        });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({
+                source: 'web-app',
+                type: 'order_created',
+                occurredAt: '2026-05-18T12:00:00.000Z',
+                payload: {
+                    orderId: '123',
+                },
+            });
+
+        expect(response.status).toBe(404);
+        expect(response.body).toEqual({
+            error: 'Tenant not found',
+        });
+    });
+
+    it('returns 404 when the RLS insert policy rejects an active member (defense in depth)', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'member@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+
         const single = vi.fn().mockResolvedValue({
             data: null,
             error: {
@@ -140,13 +217,19 @@ describe('POST /tenants/:tenantId/events', () => {
         const select = vi.fn(() => ({ single }));
         const insert = vi.fn(() => ({ select }));
 
+        let eventsCallCount = 0;
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus();
             }
 
             if (table === 'events') {
-                return { insert };
+                eventsCallCount += 1;
+                return eventsCallCount === 1 ? mockEventQuota() : { insert };
             }
 
             return { insert: vi.fn(), select: vi.fn() };
@@ -209,13 +292,19 @@ describe('POST /tenants/:tenantId/events', () => {
         const select = vi.fn(() => ({ single }));
         const insert = vi.fn(() => ({ select }));
 
+        let eventsCallCount = 0;
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus();
             }
 
             if (table === 'events') {
-                return { insert };
+                eventsCallCount += 1;
+                return eventsCallCount === 1 ? mockEventQuota() : { insert };
             }
 
             return { select: vi.fn(), insert: vi.fn() };
@@ -249,6 +338,7 @@ describe('POST /tenants/:tenantId/events', () => {
             },
             metadata: {},
             created_by_user_id: 'user-123',
+            idempotency_key: null,
         });
         expect(response.status).toBe(201);
         expect(response.body).toEqual({
@@ -267,7 +357,9 @@ describe('POST /tenants/:tenantId/events', () => {
                 metadata: {},
                 status: 'accepted',
                 createdByUserId: 'user-123',
+                createdByApiKeyId: null,
                 idempotencyKey: null,
+                failureReason: null,
                 createdAt: '2026-05-18T12:00:01.000Z',
                 updatedAt: '2026-05-18T12:00:01.000Z',
             },
@@ -287,6 +379,10 @@ describe('POST /tenants/:tenantId/events', () => {
         });
 
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus('archived');
             }
@@ -339,13 +435,19 @@ describe('POST /tenants/:tenantId/events', () => {
         const select = vi.fn(() => ({ single }));
         const insert = vi.fn(() => ({ select }));
 
+        let eventsCallCount = 0;
         userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
             if (table === 'tenants') {
                 return mockTenantStatus();
             }
 
             if (table === 'events') {
-                return { insert };
+                eventsCallCount += 1;
+                return eventsCallCount === 1 ? mockEventQuota() : { insert };
             }
 
             return { select: vi.fn(), insert: vi.fn() };
@@ -368,6 +470,142 @@ describe('POST /tenants/:tenantId/events', () => {
         expect(response.status).toBe(502);
         expect(response.body).toEqual({
             error: 'Event creation is temporarily unavailable',
+        });
+    });
+
+    it('replays the existing event with 200 when the idempotency key already exists', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'member@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+
+        const existingEvent = {
+            id: 'event-existing',
+            tenant_id: tenantId,
+            source: 'web-app',
+            type: 'order_created',
+            subject: null,
+            occurred_at: '2026-05-18T12:00:00.000Z',
+            received_at: '2026-05-18T12:00:01.000Z',
+            payload: { orderId: '123' },
+            metadata: {},
+            status: 'accepted',
+            created_by_user_id: 'user-123',
+            idempotency_key: 'retry-key-1',
+            created_at: '2026-05-18T12:00:01.000Z',
+            updated_at: '2026-05-18T12:00:01.000Z',
+        };
+
+        const single = vi.fn().mockResolvedValue({
+            data: null,
+            error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+        });
+        const insertSelect = vi.fn(() => ({ single }));
+        const insert = vi.fn(() => ({ select: insertSelect }));
+
+        const maybeSingle = vi.fn().mockResolvedValue({ data: existingEvent, error: null });
+        const eqIdempotencyKey = vi.fn(() => ({ maybeSingle }));
+        const eqTenant = vi.fn(() => ({ eq: eqIdempotencyKey }));
+        const lookupSelect = vi.fn(() => ({ eq: eqTenant }));
+
+        let eventsCallCount = 0;
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
+            if (table === 'tenants') {
+                return mockTenantStatus();
+            }
+
+            if (table === 'events') {
+                eventsCallCount += 1;
+
+                if (eventsCallCount === 1) {
+                    return mockEventQuota();
+                }
+
+                return eventsCallCount === 2 ? { insert, select: lookupSelect } : { select: lookupSelect };
+            }
+
+            return { select: vi.fn(), insert: vi.fn() };
+        });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({
+                source: 'web-app',
+                type: 'order_created',
+                occurredAt: '2026-05-18T12:00:00.000Z',
+                payload: { orderId: '123' },
+                idempotencyKey: 'retry-key-1',
+            });
+
+        expect(eqTenant).toHaveBeenCalledWith('tenant_id', tenantId);
+        expect(eqIdempotencyKey).toHaveBeenCalledWith('idempotency_key', 'retry-key-1');
+        expect(response.status).toBe(200);
+        expect(response.body.item).toMatchObject({
+            id: 'event-existing',
+            idempotencyKey: 'retry-key-1',
+        });
+    });
+
+    it('returns 429 when the tenant has reached its daily event quota', async () => {
+        getUser.mockResolvedValue({
+            data: {
+                user: {
+                    id: 'user-123',
+                    email: 'member@example.com',
+                    user_metadata: {},
+                },
+            },
+            error: null,
+        });
+
+        const insert = vi.fn();
+        const quota = mockEventQuota(10000);
+
+        userFrom.mockImplementation((table: string) => {
+            if (table === 'memberships') {
+                return mockMembership();
+            }
+
+            if (table === 'tenants') {
+                return mockTenantStatus();
+            }
+
+            if (table === 'events') {
+                return { select: quota.select, insert };
+            }
+
+            return { select: vi.fn(), insert: vi.fn() };
+        });
+
+        const app = createApp();
+
+        const response = await request(app)
+            .post(`/tenants/${tenantId}/events`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({
+                source: 'web-app',
+                type: 'order_created',
+                occurredAt: '2026-05-18T12:00:00.000Z',
+                payload: { orderId: '123' },
+            });
+
+        expect(insert).not.toHaveBeenCalled();
+        expect(response.status).toBe(429);
+        expect(response.body).toEqual({
+            error: 'Daily event quota exceeded for this tenant',
         });
     });
 });

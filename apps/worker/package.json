@@ -5,18 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "echo lint worker",
-    "test": "echo test worker"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@eventops/config": "workspace:*",
-    "dotenv": "^16.4.5"
+    "@eventops/logger": "workspace:*",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.1"
   },
   "devDependencies": {
     "@eventops/tsconfig": "workspace:*",
     "@types/node": "^22.7.4",
-    "tsx": "^4.19.1"
+    "vitest": "^4.1.4"
   }
 }

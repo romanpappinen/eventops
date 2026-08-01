@@ -1,3 +1,4 @@
+import { createLogger } from '@eventops/logger';
 import { parseWorkerEnv } from '@eventops/config';
 import { sendTenantInvitationEmail } from './lib/resend.js';
 import {
@@ -6,11 +7,14 @@ import {
     getTenantById,
     getUserById,
     listPendingInvitationEmailJobs,
-    updateInvitationEmailJob,
+    markInvitationEmailJobFailed,
+    markInvitationEmailJobSent,
     updateTenantInvitation,
 } from './lib/supabase-rest.js';
 
-interface InvitationEmailJobRow {
+const logger = createLogger('worker:invitation-email');
+
+export interface InvitationEmailJobRow {
     id: string;
     invitation_id: string;
     attempts: number;
@@ -76,18 +80,11 @@ async function loadInvitationContext(invitationId: string) {
     };
 }
 
-async function markJobSuccess(job: InvitationEmailJobRow, messageId: string) {
+export async function markJobSuccess(job: InvitationEmailJobRow, messageId: string) {
     const now = new Date().toISOString();
     const nextAttempts = job.attempts + 1;
 
-    await updateInvitationEmailJob(job.id, {
-        status: 'sent',
-        attempts: nextAttempts,
-        accept_token: null,
-        last_error: null,
-        processed_at: now,
-        updated_at: now,
-    });
+    await markInvitationEmailJobSent(job.id, nextAttempts);
 
     await updateTenantInvitation(job.invitation_id, {
         email_delivery_status: 'sent',
@@ -98,21 +95,19 @@ async function markJobSuccess(job: InvitationEmailJobRow, messageId: string) {
     });
 }
 
-async function markJobFailure(job: InvitationEmailJobRow, errorMessage: string) {
+export async function markJobFailure(job: InvitationEmailJobRow, errorMessage: string) {
     const env = parseWorkerEnv(process.env);
     const nextAttempts = job.attempts + 1;
     const terminal = nextAttempts >= env.INVITATION_EMAIL_MAX_ATTEMPTS;
     const now = new Date();
     const retryAt = new Date(now.getTime() + nextAttempts * env.INVITATION_EMAIL_POLL_INTERVAL_MS);
 
-    await updateInvitationEmailJob(job.id, {
+    await markInvitationEmailJobFailed(job.id, {
         status: terminal ? 'failed' : 'pending',
         attempts: nextAttempts,
-        accept_token: terminal ? null : job.accept_token,
-        last_error: errorMessage,
-        scheduled_at: terminal ? now.toISOString() : retryAt.toISOString(),
-        processed_at: terminal ? now.toISOString() : null,
-        updated_at: now.toISOString(),
+        lastError: errorMessage,
+        scheduledAt: terminal ? now.toISOString() : retryAt.toISOString(),
+        terminal,
     });
 
     await updateTenantInvitation(job.invitation_id, {
@@ -161,7 +156,7 @@ async function processJob(job: InvitationEmailJobRow) {
 export async function runInvitationEmailWorker() {
     const env = parseWorkerEnv(process.env);
 
-    console.log('Invitation email worker started');
+    logger.info('Invitation email worker started');
 
     while (true) {
         try {
@@ -179,13 +174,14 @@ export async function runInvitationEmailWorker() {
                 } catch (error) {
                     const message =
                         error instanceof Error ? error.message : 'Invitation email processing failed';
+                    logger.warn({ jobId: job.id, invitationId: job.invitation_id, err: error }, message);
                     await markJobFailure(job, message);
                 }
             }
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : 'Invitation email polling failed';
-            console.error(message);
+            logger.error({ err: error }, message);
         }
 
         await sleep(env.INVITATION_EMAIL_POLL_INTERVAL_MS);

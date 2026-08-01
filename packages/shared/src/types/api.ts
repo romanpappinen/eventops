@@ -17,7 +17,9 @@ export interface EventItem {
     metadata: Record<string, unknown>;
     status: EventStatus;
     createdByUserId: string | null;
+    createdByApiKeyId: string | null;
     idempotencyKey: string | null;
+    failureReason: string | null;
     createdAt: string;
     updatedAt: string;
 }

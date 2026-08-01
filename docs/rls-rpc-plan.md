@@ -399,3 +399,74 @@ Current route status:
 5. keep `POST /tenants` on RPC, but move off service-role-by-default if the RPC can be called safely with user context
 6. decide and implement RPC strategy for tenant update and archive
 7. review memberships and invitations as explicit RPC-managed write flows
+
+---
+
+## Canonical RPC Reference (as of migration `0013`)
+
+Several of these functions were redefined across migrations while the actor
+model shifted from an app-supplied user id parameter to deriving the actor
+from `auth.uid()` inside the function body. This section is the single
+source of truth for which signature is live. If you are about to add a
+migration that touches one of these functions, `drop function if exists`
+the previous signature (if the parameter list changes) before `create or
+replace function` — do not leave both callable.
+
+| Function | Canonical signature | Introduced | Superseded / dropped |
+| --- | --- | --- | --- |
+| `create_tenant_with_owner` | `(p_name text, p_slug text, p_description text)` | `0007` | 4-arg version taking `p_created_by_user_id uuid` (`0003`, then re-hardened in `0006`); `0007` explicitly drops it. Actor is always `auth.uid()` now. |
+| `create_tenant_invitation` | `(p_tenant_id uuid, p_email text, p_role text)` | `0007` (signature); body refined by `0009` (archived-tenant guard) | 4-arg version taking `p_invited_by_user_id uuid` (`0003`, re-hardened in `0006`); `0007` explicitly drops it. `0009`'s `create or replace` keeps the same 3-arg signature — not a further signature change. |
+| `update_tenant` | `(p_tenant_id uuid, p_name text default null, p_slug text default null, p_description text default null, p_description_provided boolean default false)` | `0007` | none — introduced once, no drift |
+| `archive_tenant` | `(p_tenant_id uuid)` | `0007` | none — introduced once, no drift |
+| `revoke_tenant_invitation` | `(p_tenant_id uuid, p_invitation_id uuid)` | `0009` | none — introduced once, no drift |
+| `accept_tenant_invitation_by_token` | `(p_token_hash text)` | `0011` | `accept_tenant_invitation(p_invitation_id uuid)` (`0008`, refined by `0009`) — dropped outright by `0011` in favor of the token-based flow. **Dead: do not call `accept_tenant_invitation` — the function no longer exists in the database.** (A dead app-code caller of the dropped function was found and removed 2026-07-10; see `diary.md`.) |
+| `is_active_tenant_member`, `is_active_tenant_owner`, `is_active_tenant` | `(p_tenant_id uuid)` → `boolean` | `0013` | none — RLS policy helper functions, called only from `using`/`with check` clauses, never called directly by API code |
+
+Not an RPC, by design: invitation **resend** (`POST
+/tenants/:tenantId/invitations/:invitationId/resend`) does not have a
+`resend_tenant_invitation` RPC. It is a single-table write (`UPDATE
+tenant_invitations ... WHERE status = 'pending'`) done in app code via
+`getSupabaseAdmin()` in `tenant.service.ts`'s `reissueInvitationAcceptToken`,
+gated by `requireTenantAccess({ minimumRole: 'owner' })` at the HTTP layer.
+It does not touch `memberships` or any other table, so it does not need the
+multi-table security-definer treatment the RPCs above exist for.
+
+---
+
+## `invitation_email_jobs` Private-Schema RPCs (as of migration `0015`)
+
+`invitation_email_jobs` was moved from `public` to a dedicated `private`
+schema by migration `0014` (`alter table public.invitation_email_jobs set
+schema private`). `private` is never in `supabase/config.toml`'s `[api]
+schemas` list, so nothing in it is reachable via PostgREST's `/rest/v1/`
+table routes at all — not even with the service-role key. The *only* way to
+read or write it is through the seven `security definer` functions below,
+all living in `public` (so they're callable via the ordinary
+`/rest/v1/rpc/<name>` route) but with `EXECUTE` revoked from `anon` and
+`authenticated` (migration `0015` — see note below on why `0014`'s `revoke
+... from public` alone wasn't enough). Only `service_role` can call them,
+which is by design: this table is worker/admin-only state, never touched
+by an end user's own session.
+
+| Function | Signature | Used by |
+| --- | --- | --- |
+| `enqueue_invitation_email_job` | `(p_invitation_id uuid, p_accept_token text)` → `void` | `apps/api`'s `tenant.service.ts` (`enqueueInvitationEmail`, called on invite and on resend) |
+| `list_pending_invitation_email_jobs` | `(p_limit integer)` → `setof (id, invitation_id, attempts, accept_token)` | `apps/worker`'s `supabase-rest.ts` (`listPendingInvitationEmailJobs`) |
+| `claim_invitation_email_job` | `(p_job_id uuid)` → `setof (id, invitation_id, attempts)` | `apps/worker`'s `supabase-rest.ts` (`claimInvitationEmailJob`) — optimistic claim, same `WHERE status = 'pending'` guard as before the migration |
+| `mark_invitation_email_job_sent` | `(p_job_id uuid, p_attempts integer)` → `void` | `apps/worker`'s `invitation-email-worker.ts` (`markJobSuccess`) |
+| `mark_invitation_email_job_failed` | `(p_job_id uuid, p_status text, p_attempts integer, p_last_error text, p_scheduled_at timestamptz, p_terminal boolean)` → `void` | `apps/worker`'s `invitation-email-worker.ts` (`markJobFailure`) — `p_terminal` decides whether to clear `accept_token`/set `processed_at`, computed in app code from `INVITATION_EMAIL_MAX_ATTEMPTS`, same as before |
+| `delete_terminal_invitation_email_jobs_older_than` | `(p_cutoff timestamptz)` → `integer` (deleted row count) | `apps/worker`'s `invitation-cleanup-sweep.ts` hourly sweep |
+| `get_invitation_email_job_accept_token` | `(p_invitation_id uuid)` → `text` | test-only: `apps/api/tests/live/support/live-client.ts` reads the raw accept token no worker is running to email out during live/E2E test runs |
+
+Why two migrations instead of one: `0014` did `revoke execute ... from
+public`, which is the textbook way to remove the default "every role gets
+EXECUTE on new functions" grant — but this Supabase project also has
+default privileges in the `public` schema that separately grant `EXECUTE`
+to `anon`/`authenticated` on new functions, independent of the `PUBLIC`
+pseudo-role. Revoking from `PUBLIC` alone left `anon`/`authenticated` still
+able to call these worker-only functions (confirmed via a live probe: an
+anon-key RPC call returned `200 []` instead of a permission error). `0015`
+explicitly revokes from `anon, authenticated` too. If you add a new
+`security definer` function anywhere in this project that should not be
+callable by end users, revoke from `anon, authenticated` explicitly —
+revoking from `PUBLIC` is not sufficient in this project.

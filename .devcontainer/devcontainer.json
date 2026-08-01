@@ -19,9 +19,16 @@
     }
   },
   "mounts": [
-    "source=eventops-codex-home,target=/home/node/.codex,type=volume"
+    "source=eventops-claude-home,target=/home/node/.claude,type=volume"
   ],
   "postCreateCommand": "pnpm install",
+  "runArgs": [
+    "--network=eventops-restricted",
+    "--cap-drop=ALL",
+    "--cap-add=CHOWN",
+    "--cap-add=FOWNER",
+    "--security-opt=no-new-privileges:true"
+  ],
   "containerEnv": {
     "NODE_ENV": "development",
     "FORCE_COLOR": "1"

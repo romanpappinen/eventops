@@ -11,6 +11,7 @@ import {
     inviteTenantMember,
     listTenantInvitationsForOwner,
     listTenantsForUser,
+    resendTenantInvitationForOwner,
     revokeTenantInvitationForOwner,
     updateTenantForUser,
 } from './tenant.service.js';
@@ -59,5 +60,11 @@ export async function listTenantInvitations(req: TenantAuthorizedRequest, res: R
 export async function revokeTenantInvitation(req: TenantAuthorizedRequest, res: Response) {
     const params = req.params as TenantInvitationRouteParams;
     const invitation = await revokeTenantInvitationForOwner(req.authToken!, params);
+    return res.json({ item: invitation });
+}
+
+export async function resendTenantInvitation(req: TenantAuthorizedRequest, res: Response) {
+    const params = req.params as TenantInvitationRouteParams;
+    const invitation = await resendTenantInvitationForOwner(req.authToken!, params);
     return res.json({ item: invitation });
 }

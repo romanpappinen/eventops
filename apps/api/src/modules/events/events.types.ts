@@ -12,7 +12,9 @@ export interface EventRow {
     metadata?: Record<string, unknown> | null;
     status: EventStatus;
     created_by_user_id?: string | null;
+    created_by_api_key_id?: string | null;
     idempotency_key?: string | null;
+    failure_reason?: string | null;
     created_at?: string | null;
     updated_at?: string | null;
 }
@@ -30,7 +32,9 @@ export function normalizeEventRecord(record: EventRow): EventItem {
         metadata: record.metadata ?? {},
         status: record.status,
         createdByUserId: record.created_by_user_id ?? null,
+        createdByApiKeyId: record.created_by_api_key_id ?? null,
         idempotencyKey: record.idempotency_key ?? null,
+        failureReason: record.failure_reason ?? null,
         createdAt: record.created_at ?? '',
         updatedAt: record.updated_at ?? '',
     };

@@ -6,7 +6,8 @@ const apiEnvSchema = z.object({
     SUPABASE_URL: z.string().min(1),
     SUPABASE_ANON_KEY: z.string().min(1),
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-    REDIS_URL: z.string().min(1)
+    REDIS_URL: z.string().min(1),
+    EVENTS_DAILY_QUOTA: z.coerce.number().int().min(1).default(10000)
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
