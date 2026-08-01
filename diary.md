@@ -1,5 +1,38 @@
 # Diary
 
+Date: 2026-08-01 (3)
+
+## What changed
+
+Rewrote `README.md` from scratch -- it had drifted far behind the actual
+system (referenced Codex CLI instead of Claude Code, listed 3 migrations
+instead of 20, described invitations as not sending email yet, had no
+mention of API keys, event processing, event stats, or the completed
+production deployment, and ended in a stale May diary dump). Rebuilt
+every section from the current codebase rather than editing the old
+text in place: enumerated actual routes from each `*.routes.ts` file,
+migration count and categories from `supabase/migrations/`, exact
+dependency lists from each `package.json`, exact test file/case counts
+from a fresh full `pnpm test` run (101 api + 8 worker + 14 web), and the
+real (not planned) CI/deployment state from this session's production
+rollout. Confirmed `REDIS_URL` is a required, validated env var and a
+Render service exists for it, but grepped and found no Redis client
+library anywhere in the codebase -- documented that honestly instead of
+repeating the old "Redis for queues" framing. Dropped the stale
+dated diary excerpts at the bottom in favor of a short current-state
+summary pointing at `CHECKLIST.md`/`diary.md` for detail.
+
+## What was verified
+
+Every path/filename referenced in the new README was checked against
+the real repository (routes read from source, migrations listed via
+`ls`, doc files confirmed to exist, test counts from an actual run) --
+nothing was carried over from the old text without re-confirming it.
+
+## Next concrete step
+
+None outstanding from this change.
+
 Date: 2026-08-01 (2)
 
 ## What changed

@@ -1,120 +1,83 @@
 # EventOps
 
-**EventOps** is a backend-focused multi-tenant event ingestion and operations platform built as a production-style portfolio project.
-
-The goal of this project is not to build a toy CRUD app. The goal is to demonstrate practical knowledge of backend architecture, system design patterns, multi-tenancy, authentication, database security, background processing, testing, and safe AI-assisted development.
-
-This repository is designed to be understandable for engineering managers, senior developers, and interviewers who want to see how the system is structured and how development decisions are made.
+**EventOps** is a multi-tenant event ingestion and operations platform built as a production-style portfolio project. It is not a toy CRUD app: the goal is to demonstrate practical backend architecture, multi-tenancy, authentication, database security (Row Level Security), background processing, testing, deployment, and a disciplined AI-assisted development workflow, end to end, on a real deployed system rather than a local-only demo.
 
 ---
 
-## Product Idea
+## What This Project Does
 
-EventOps is a platform where companies can send business or system events into a central backend.
-
-Example event:
+A tenant (a company or team) registers, creates a workspace, and invites teammates. The tenant's own backend systems can then authenticate with a scoped API key and send business/system events into EventOps:
 
 ```json
 {
-  "type": "order_created",
-  "userId": "123",
-  "amount": 49,
-  "timestamp": "2026-04-24T12:00:00.000Z"
+  "source": "checkout-service",
+  "type": "order.created",
+  "occurredAt": "2026-08-01T12:00:00.000Z",
+  "payload": { "orderId": "123", "amount": 49 }
 }
 ```
 
-The platform can then validate, store, process, and expose these events for operational workflows.
+Each event is accepted synchronously, then validated asynchronously by a background worker and moved to `processed` or `failed` (with a reason). Tenant members can see the event log, the outcome of each event, and a stats view (counts by status, failure rate, over a selectable window) in the web UI.
 
-Possible use cases:
+The full flow implemented today:
 
-* event ingestion for SaaS products
-* operational dashboards
-* audit trails
-* customer activity tracking
-* async event processing
-* quota-based usage limits
-* tenant-isolated analytics
-* future alerting and automation workflows
+1. register and sign in (Supabase Auth)
+2. create a tenant, invite teammates by email (with delivery tracking, resend, and expiry/cleanup)
+3. create a tenant-scoped API key for server-to-server ingestion
+4. send events via `POST /events` using only the API key — no user session required
+5. a background worker validates each event and transitions its status
+6. tenant members read the event log and a stats dashboard in the web app
 
-The first version focuses on the backend foundation: tenants, users, memberships, authentication, API structure, database migrations, RLS, tests, and developer environment.
-
----
-
-## Why This Project Exists
-
-This project is intentionally designed to demonstrate knowledge that is useful for middle-plus fullstack/backend interviews.
-
-It focuses on topics such as:
-
-* Node.js backend architecture
-* Express API design
-* multi-tenant SaaS patterns
-* Supabase Auth and Postgres
-* Row Level Security foundations
-* service-oriented module structure
-* typed environment validation
-* database migrations
-* integration testing
-* monorepo organization
-* background workers
-* safe local development with containers
-* AI-assisted development workflow with Codex CLI
-
-The project is built step by step, with each feature intended to be small, testable, and reviewable.
+This is deployed as a real, live system (Render + a production Supabase project), not only a local dev setup.
 
 ---
 
 ## Tech Stack
 
 ### Frontend
+* Vue 3, Vite, TypeScript
+* Pinia for state
+* Vue Router
+* Playwright for browser end-to-end tests
 
-* Vue 3
-* Vite
-* TypeScript
+### Backend API (`apps/api`)
+* Node.js, Express, TypeScript
+* Zod for request/response and environment validation
+* `@supabase/supabase-js` (both a user-context client, for RLS-scoped requests, and a service-role admin client)
+* `pino` / `pino-http` for structured JSON logging and per-request IDs
+* `express-rate-limit` on registration, invitation acceptance/resend, and event ingestion
 
-### Backend API
+### Background Worker (`apps/worker`)
+* Node.js, TypeScript, `tsx`
+* Three independent poll loops running concurrently: invitation email delivery, invitation/job cleanup, and event processing
+* Talks to Supabase directly over PostgREST (no queue library) — `REDIS_URL` is a required, validated environment variable and a Render Key Value instance is provisioned, but nothing in the codebase uses it yet; it exists for future queue-backed work, not current background processing
 
-* Node.js
-* Express
-* TypeScript
-* Zod
-* Supabase JS client
-
-### Database and Auth
-
-* Supabase
-* PostgreSQL
-* Supabase Auth
-* SQL migrations
-* Row Level Security
-
-### Background Processing
-
-* Worker app in Node.js
-* Redis planned for queues and async jobs
+### Database & Auth
+* Supabase (Postgres + Auth/GoTrue)
+* SQL migrations under `supabase/migrations/`
+* Row Level Security on every application table
+* `security definer` RPC functions for multi-table writes and for tables deliberately hidden from PostgREST
 
 ### Testing
-
-* Vitest
-* Supertest
-* API integration tests
-* TypeScript typecheck
+* Vitest + Supertest for API integration and unit tests
+* A separate opt-in `test:live` suite per app that runs the same code against a real local Supabase stack (no mocks)
+* Playwright for full-browser end-to-end flows
+* TypeScript typecheck across every package
 
 ### Monorepo / Tooling
+* pnpm workspaces + Turborepo
+* Shared packages: `@eventops/config` (typed env schemas), `@eventops/shared` (shared types), `@eventops/validation` (Zod DTOs shared between `apps/api` and `apps/web`), `@eventops/logger`, plus shared ESLint/TypeScript configs
+* Dev Container for a consistent Linux development environment
 
-* pnpm workspaces
-* Turborepo
-* Shared packages
-* Dev Container
-* WSL-friendly development setup
+### CI / Deployment
+* GitHub Actions (`.github/workflows/ci.yml`): install, typecheck, and test on every push to `main` and every pull request
+* Branch protection on `main` requires the CI check to pass before merging
+* Render Blueprint (`render.yaml`): `eventops-api`, `eventops-worker`, `eventops-web`, `eventops-redis`, deployed against a dedicated production Supabase project (see `docs/deployment.md`)
 
 ### AI-Assisted Development
-
-* Codex CLI inside Dev Container
-* Repository-level rules through `AGENTS.md`
-* Project-level Codex config through `.codex/config.toml`
-* Restricted environment exposure
-* No direct access to real secrets
+* Claude Code, driven by repository-level rules in `CLAUDE.md`
+* Scoped to this repository, with an explicit secrets boundary (`.env`, credential files, and CI secret stores are never read, printed, or modified)
+* No direct path to production: every change lands as a small diff on a feature branch, reviewed and merged by a human, deployed only through CI and the Render Blueprint above — never triggered directly by the assistant
 
 ---
 
@@ -125,23 +88,32 @@ eventops/
   apps/
     api/                 # Express backend API
     web/                 # Vue frontend
-    worker/              # Background worker
+    worker/              # Background worker (email delivery, cleanup, event processing)
 
   packages/
-    config/              # Typed environment validation
-    shared/              # Shared types and utilities
-    validation/          # Shared validation schemas
-    eslint-config/       # Shared lint configuration
-    tsconfig/            # Shared TypeScript configs
+    config/               # Typed environment validation (Zod schemas)
+    shared/                # Shared TypeScript types
+    validation/            # Shared request/response DTO schemas
+    logger/                # Structured logging wrapper (pino)
+    eslint-config/         # Shared lint configuration
+    tsconfig/              # Shared TypeScript configs
 
   supabase/
-    config.toml          # Supabase local config
-    migrations/          # Database migrations
+    config.toml           # Supabase local config
+    migrations/            # Database migrations (schema, RLS, RPCs)
 
-  .devcontainer/         # Containerized development environment
-  .codex/                # Codex CLI project config
-  AGENTS.md              # AI development rules
-  .env.example           # Safe environment variable template
+  docs/
+    deployment.md          # Production Supabase + Render setup
+    rls-rpc-plan.md        # RLS/RPC design decisions and reference
+    REMOTE-ACCESS.md
+
+  .devcontainer/          # Containerized development environment
+  .github/workflows/       # CI pipeline
+  CLAUDE.md                # AI development rules for this repository
+  CHECKLIST.md              # Running work log: what shipped, in what order, and why
+  diary.md                  # Dated engineering log with verification notes
+  render.yaml                # Render deployment Blueprint
+  .env.example
   package.json
   pnpm-workspace.yaml
   turbo.json
@@ -149,328 +121,126 @@ eventops/
 
 ---
 
-## Core Domain Model
+## Domain Model
 
-The first version of the platform uses a standard SaaS multi-tenancy model.
+| Table | Purpose |
+| --- | --- |
+| `users` | Application-level profile linked 1:1 to a Supabase Auth user |
+| `tenants` | An organization/workspace; owns all tenant-scoped data |
+| `memberships` | Join table between users and tenants, with a `role` (`owner`/`admin`/`member`) and `status` |
+| `tenant_invitations` | Pending/accepted/revoked email invitations, with hashed accept tokens and expiry |
+| `invitation_email_jobs` | Delivery queue for invitation emails (kept in a `private` schema, unreachable via PostgREST — see below) |
+| `api_keys` | Tenant-scoped credentials for server-to-server event ingestion; only a hash is stored |
+| `events` | Ingested events: payload, metadata, `status` (`accepted`/`processed`/`failed`), `failure_reason`, and attribution to either a user or an API key |
 
-### `users`
-
-Application-level user profiles linked to Supabase Auth users.
-
-### `tenants`
-
-Organizations, teams, or workspaces. A tenant owns data and isolates access.
-
-### `memberships`
-
-A join table between users and tenants.
-
-It stores:
-
-* tenant ID
-* user ID
-* role
-* membership status
-
-This model allows one user to belong to many tenants and each tenant to have many users.
+One user can belong to many tenants; one tenant can have many users, invitations, API keys, and events.
 
 ---
 
-## Current API Foundation
+## API Surface
 
-### Health Endpoints
-
-The API exposes health-style endpoints:
+All routes are mounted in `apps/api/src/app.ts`. `requireAuth` expects a Supabase user JWT; `requireApiKey` expects a tenant API key and has no user session at all.
 
 ```txt
-GET /health
-GET /ready
-GET /live
+GET  /health | /ready | /live
+
+POST /auth/register
+GET  /auth/me                                            (requireAuth)
+
+GET    /tenants                                          (requireAuth)
+POST   /tenants                                           (requireAuth)
+GET    /tenants/:tenantId                                  (requireAuth, member+)
+PATCH  /tenants/:tenantId                                   (requireAuth, owner)
+DELETE /tenants/:tenantId                                    (requireAuth, owner — archive)
+
+POST   /tenants/:tenantId/invitations                        (requireAuth, owner)
+GET    /tenants/:tenantId/invitations                         (requireAuth, owner)
+DELETE /tenants/:tenantId/invitations/:invitationId             (requireAuth, owner — revoke)
+POST   /tenants/:tenantId/invitations/:invitationId/resend        (requireAuth, owner)
+GET    /invitations/accept?token=...                          (requireAuth)
+POST   /invitations/accept                                     (requireAuth)
+
+GET    /tenants/:tenantId/api-keys                            (requireAuth, owner)
+POST   /tenants/:tenantId/api-keys                              (requireAuth, owner)
+DELETE /tenants/:tenantId/api-keys/:apiKeyId                     (requireAuth, owner — revoke)
+
+GET    /tenants/:tenantId/events                              (requireAuth, member+)
+GET    /tenants/:tenantId/events/stats?windowDays=1-90            (requireAuth, member+)
+GET    /tenants/:tenantId/events/:eventId                       (requireAuth, member+)
+POST   /tenants/:tenantId/events                               (requireAuth, member+ — manual/UI ingestion)
+
+POST   /events                                                (requireApiKey — server-to-server ingestion)
 ```
 
-These endpoints are covered by integration tests.
+`POST /events` is the server-to-server ingestion path: the tenant is resolved only from the API key, never from client input. `POST /tenants/:tenantId/events` is the same underlying create logic, reached instead with a human session, used by the manual "create event" form in the UI. Both paths share idempotency-key replay and per-tenant daily quota enforcement.
 
-### Auth Middleware
-
-The API has a `requireAuth` middleware that:
-
-* reads a Bearer token
-* validates the token with Supabase Auth
-* attaches the authenticated user to the request
-
-### Supabase Client Layer
-
-Supabase clients are created through helper functions:
-
-```ts
-getSupabaseAdmin()
-getSupabaseAuth()
-```
-
-The clients are initialized lazily so that environment variables are loaded before runtime code needs them.
-
-### Tenant Endpoints
-
-The tenant module is the first business module.
-
-Current endpoints:
-
-```txt
-GET /tenants
-POST /tenants
-GET /tenants/:tenantId
-PATCH /tenants/:tenantId
-DELETE /tenants/:tenantId
-POST /tenants/:tenantId/invitations
-```
-
-The intended flow is:
-
-1. user authenticates through Supabase
-2. API validates the user token
-3. API ensures the user profile exists in `public.users`
-4. user creates a tenant
-5. API creates owner membership
-6. user can list tenants where they are an active member
-7. tenant-scoped routes load membership server-side and enforce role checks
-
-### Tenant Backend Structure
-
-The tenant API now follows a route/controller/service split:
-
-* `tenants.routes.ts`
-* `tenants.controller.ts`
-* `tenant.service.ts`
-* `tenant.schemas.ts`
-* `tenant-access.middleware.ts`
-
-The middleware `requireTenantAccess()` is used for tenant-scoped authorization.
-
-It:
-
-* loads the authenticated user's active membership for a tenant
-* enforces a minimum role such as `member` or `owner`
-* blocks access before controller code runs
-
-### Tenant Creation Rules
-
-Tenant creation accepts:
-
-* `name` required
-* `description` optional
-* `slug` optional
-
-The API:
-
-* normalizes or derives the slug
-* creates the tenant through a database RPC
-* automatically creates an active `owner` membership for the creator
-* returns `409` on unique slug conflicts
-
-### Tenant Invitation Rules
-
-Owners can invite members by email through:
-
-```txt
-POST /tenants/:tenantId/invitations
-```
-
-Invitation payload:
-
-* `email`
-* `role` as `admin` or `member`
-
-The current implementation stores a pending invitation record. It does not yet send email or implement invitation acceptance.
-
-### Frontend Tenant Flow
-
-The Vue app now includes authenticated tenant pages:
-
-```txt
-/tenants
-/tenants/new
-/tenants/:tenantId/edit
-```
-
-Current frontend behavior:
-
-* list accessible tenants through the backend API
-* create a tenant from the UI
-* show tenant details for an accessible tenant
-* invite members by email from the tenant settings page
-
-Tenant update UI is intentionally limited until the backend update flow is finalized end to end.
+A full walkthrough for integrators is documented in the app itself at `/docs/ingestion` (`apps/web/src/pages/DocsIngestionPage.vue`).
 
 ---
 
-## Database Migrations
+## Event Processing Pipeline
 
-Database schema is managed through Supabase SQL migrations.
+Every event starts at `status: "accepted"`. A poll loop in `apps/worker` (`event-processor.ts`) picks up accepted events, checks that the combined size of `payload` and `metadata` stays within `EVENT_MAX_PAYLOAD_BYTES` (default 32KB — a real gap, since Express's own body-size limit alone would let anything up to 100KB through synchronous ingestion), and moves each event directly to `processed` or `failed` with a `failure_reason`. The worker claims events with a conditional PostgREST `PATCH ... WHERE status = 'accepted'`, which is safe under normal row locking even with multiple worker instances — no separate job-claim table or RPC was needed, since the check itself is synchronous with no external I/O to protect a claim/complete window around.
 
-Current migrations:
-
-```txt
-supabase/migrations/0001_users_tenants_memberships.sql
-supabase/migrations/0002_rls.sql
-supabase/migrations/0003_tenant_creation_and_invitations.sql
-```
-
-The schema includes:
-
-* `users`
-* `tenants`
-* `memberships`
-* `tenant_invitations`
-* indexes
-* basic constraints
-* initial Row Level Security policies
-
-The goal is to keep database structure reproducible across machines and environments instead of manually creating tables in the Supabase UI.
-
-Important:
-
-* tenant creation now depends on the RPC `public.create_tenant_with_owner`
-* tenant invitations now depend on the RPC `public.create_tenant_invitation`
-* both are created by migration `0003`
-
-If the local Supabase database was started before the latest migration was added, apply the latest migrations before testing tenant creation from the UI or API.
+The web app exposes this as:
+* a status column (with the failure reason shown inline) and a manual refresh button on the tenant events log, since processing is decoupled from the request that created the event
+* a stats card (`GET /tenants/:tenantId/events/stats`) showing total/processed/failed/accepted counts and a failure rate over a selectable 24h/7d/30d window
 
 ---
 
-## Row Level Security Strategy
+## Database & Row Level Security
 
-RLS is enabled early because this project is multi-tenant.
+Schema is managed entirely through ordered SQL migrations in `supabase/migrations/` — nothing is created by hand in the Supabase dashboard. As of this writing there are 20 migrations, covering (in order): the core `users`/`tenants`/`memberships` schema and its RLS; tenant creation and invitation RPCs; the `events` table and its RLS; RLS/RPC hardening to remove recursive-policy failures; invitation email delivery and hashed accept tokens; moving `invitation_email_jobs` into a `private` schema reachable only through `security definer` RPCs (with a follow-up migration closing a default-privilege gap that left those RPCs callable by `anon`/`authenticated`); an idempotency-key unique constraint; the `api_keys` table; an event `failure_reason` column; and two migrations granting explicit base-table privileges to `anon`/`authenticated`/`service_role` after a real production incident showed Supabase's own "auto-expose new tables" behavior does not retroactively apply to tables added after a hosted project's initial creation.
 
-Initial policies focus on read access:
+RLS is enabled on every application table. The general pattern:
 
-* users can read their own profile
-* tenant members can read their tenants
-* tenant members can read memberships within their tenant
-
-For server-side writes, the API uses the Supabase service role key on the backend only.
-
-Important rule:
-
-> The service role key must never be exposed to the frontend.
-
-Future work will expand RLS policies and add more explicit permission checks at the API service layer.
-
----
-
-## Development Environment
-
-This project is intended to be developed inside a Dev Container.
-
-Why:
-
-* consistent Linux environment
-* isolated dependencies
-* Codex CLI runs inside the container, not on the host machine
-* safer AI-assisted workflow
-* fewer Windows/Node/pnpm permission issues
-
-Recommended local setup:
-
-1. Windows host
-2. WSL Ubuntu
-3. repository cloned into WSL filesystem
-4. VS Code opened from WSL
-5. Dev Container started from VS Code
-6. Supabase local stack started through project-local CLI
+* reads are scoped by active tenant membership (`exists (select 1 from memberships where ...)`), with no extra role restriction where the underlying data isn't role-sensitive (e.g. the event log and its stats)
+* role-sensitive writes (`update`/`delete` on tenants, invitations, API keys) are additionally gated at the API layer through `requireTenantAccess({ minimumRole: ... })`, not just RLS
+* the API's backend-only service-role key bypasses RLS entirely and is never exposed to the frontend
+* `invitation_email_jobs` sits outside RLS's reach altogether — it lives in a `private` Postgres schema never exposed through PostgREST, reachable only via a small set of `security definer` functions with `EXECUTE` explicitly revoked from `anon`/`authenticated`
 
 ---
 
 ## Environment Variables
 
-The repository contains only a safe template:
+Only a template is committed:
 
 ```txt
 .env.example
 ```
 
-A real local `.env` file must be created manually and must never be committed.
+A real `.env` is created locally and is never committed. Variable names (not values) are documented here and enforced by typed Zod schemas in `@eventops/config`:
 
-Required variables:
+**`apps/api`** (`packages/config/src/lib/api-env.ts`): `NODE_ENV`, `API_PORT`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL`, `EVENTS_DAILY_QUOTA`.
 
-```env
-NODE_ENV=development
-API_PORT=3000
+**`apps/worker`** (`packages/config/src/lib/worker-env.ts`): `NODE_ENV`, `REDIS_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `INVITATION_FROM_EMAIL`, `APP_WEB_BASE_URL`, `INVITATION_EMAIL_BATCH_SIZE`, `INVITATION_EMAIL_POLL_INTERVAL_MS`, `INVITATION_EMAIL_MAX_ATTEMPTS`, `INVITATION_EMAIL_JOB_RETENTION_DAYS`, `EVENT_PROCESSING_BATCH_SIZE`, `EVENT_PROCESSING_POLL_INTERVAL_MS`, `EVENT_MAX_PAYLOAD_BYTES`.
 
-SUPABASE_URL=__SET_LOCALLY__
-SUPABASE_ANON_KEY=__SET_LOCALLY__
-SUPABASE_SERVICE_ROLE_KEY=__SET_LOCALLY__
+**`apps/web`** (build-time, baked in by Vite, not secret but environment-specific): `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
-REDIS_URL=__SET_LOCALLY__
-```
-
-For local Supabase, the values come from:
-
-```bash
-pnpm exec supabase start
-```
-
-or, depending on the local setup:
-
-```bash
-pnpm dlx supabase start
-```
-
-Security rules:
-
-* `.env` is ignored by Git
-* `.env.example` is committed
-* real secrets are never pasted into prompts
-* Codex is instructed not to read `.env`
+For local Supabase values, run `supabase start` from the repository root; it applies every migration automatically and prints the local API URL and keys.
 
 ---
 
-## Running the Project
-
-### Install dependencies
-
-From inside the Dev Container:
+## Running Locally
 
 ```bash
+# from inside the Dev Container
 pnpm install
-```
 
-### Start local Supabase
+# start a local Supabase stack (applies all migrations)
+supabase start
 
-Run from the project root on the host/available Docker environment:
-
-```bash
-pnpm exec supabase start
-```
-
-If using project-local execution through pnpm dlx:
-
-```bash
-pnpm dlx supabase start
-```
-
-### Start the monorepo apps
-
-From inside the Dev Container:
-
-```bash
+# start apps/web, apps/api, and apps/worker together
 pnpm dev
 ```
 
-This starts:
-
-* `apps/web`
-* `apps/api`
-* `apps/worker`
-
-### Run API tests
-
 ```bash
+# typecheck and test everything
+pnpm typecheck
+pnpm test
+
+# a single package
 pnpm --filter @eventops/api test
-```
-
-### Run API typecheck
-
-```bash
 pnpm --filter @eventops/api typecheck
 ```
 
@@ -478,320 +248,60 @@ pnpm --filter @eventops/api typecheck
 
 ## Testing Strategy
 
-The project starts with API integration tests.
+Mocked unit/integration tests run by default and never touch a real network or database (Supabase clients are mocked):
 
-Current coverage includes:
+* `apps/api`: 18 test files, 101 tests — health, auth, tenant CRUD and role enforcement, invitations (create/list/resend/revoke/accept), API keys, event create/list/get/stats, ingestion via API key, idempotency, quota
+* `apps/worker`: 3 test files, 8 tests — invitation email delivery (including retry exhaustion), cleanup sweep, event processing (pass and oversized-payload cases)
+* `apps/web`: 2 test files, 14 tests — tenant/invitation/API-key/event store actions against a mocked `fetch`
 
-* health endpoints
-* auth registration and `GET /auth/me`
-* protected tenant routes returning `401` without authentication
-* tenant creation validation and duplicate slug handling
-* tenant invitation authorization
-* tenant CRUD role checks and archive behavior
+Two additional suites run against real infrastructure and are intentionally excluded from the default `pnpm test`:
 
-The testing strategy is intentionally incremental:
+* `pnpm --filter @eventops/api test:live` — the same code paths, against a real local Supabase stack, including RLS-boundary checks that mocks cannot catch
+* `pnpm --filter @eventops/web test:e2e` — Playwright, driving a real Chromium browser through the full invitation flow and the API-key/event-ingestion flow against real running dev servers and a real local Supabase stack
 
-1. test public infrastructure endpoints
-2. test auth guards
-3. test validation failures
-4. test happy-path tenant creation
-5. test tenant role enforcement and isolation
-6. test async processing
-7. later add frontend and end-to-end tests
+---
 
-The goal is not to chase 100% coverage early. The goal is to protect critical contracts and prevent architectural regressions.
+## CI/CD & Deployment
+
+`.github/workflows/ci.yml` runs install, typecheck, and test on every push to `main` and every pull request. Branch protection on `main` requires that check to pass before a merge is allowed.
+
+The system is deployed to Render from `render.yaml` (`eventops-api`, `eventops-worker`, `eventops-web`, `eventops-redis`) against a dedicated production Supabase project — not just prepared, but actually applied and live-verified end to end (registration, tenant creation, API-key issuance, real event ingestion, async processing, and the stats view all confirmed against the deployed system). `docs/deployment.md` covers the production Supabase setup and what's still manual. Render's own auto-deploy on push to `main` is currently used as-is; a manual-approval deploy gate (a second CI job behind a GitHub Environment reviewer) is designed but intentionally not wired up, by choice, not because it's blocked on anything technical.
 
 ---
 
 ## AI-Assisted Development Workflow
 
-This project uses Codex CLI inside the Dev Container.
+Development in this repository uses Claude Code, governed by `CLAUDE.md`. Key rules enforced there:
 
-Codex is configured through:
+* work stays inside this repository; the smallest change that solves the task is preferred
+* `.env`, credential files, and CI secret stores are never read, printed, diffed, or modified — only `.env.example`, typed config, and documented variable names are used
+* no deploy, production migration, or release is ever run directly — the only path to production is a small diff on a feature branch, reviewed and merged by a human, deployed through CI/Render
+* destructive commands (`rm -rf`, `git reset --hard`, `git clean -fd`, force operations) are never run
+* after any non-trivial change: run the relevant typecheck/lint/tests, record what changed and what was verified in `diary.md`, and commit as its own reviewed change
 
-```txt
-.codex/config.toml
-AGENTS.md
-```
-
-The intended usage is controlled and review-based.
-
-Recommended workflow:
-
-1. create a small feature branch
-2. ask Codex to inspect relevant files only
-3. ask Codex to propose a plan before editing
-4. approve only safe commands
-5. require a small diff
-6. run tests and typecheck
-7. run `/review`
-8. commit the change
-9. open or merge a PR
-
-Example prompt:
-
-```txt
-Implement GET /auth/me in apps/api.
-
-Use:
-- existing requireAuth middleware
-- existing Supabase helpers from apps/api/src/lib/supabase.ts
-
-Follow:
-- router/controller/service pattern
-- thin routes
-- business logic in services
-
-Do not:
-- read or modify .env
-- create new Supabase clients
-- add dependencies without asking
-
-Before editing:
-- inspect only relevant files
-- propose a file plan
-
-After editing:
-- run pnpm --filter @eventops/api test
-- run pnpm --filter @eventops/api typecheck
-```
-
----
-
-## Branching and Development Flow
-
-The project should be developed in small feature branches.
-
-Recommended flow:
-
-```bash
-git checkout main
-git pull
-git checkout -b feature/api-auth-me
-```
-
-After implementation:
-
-```bash
-pnpm --filter @eventops/api test
-pnpm --filter @eventops/api typecheck
-git status
-git diff
-git add .
-git commit -m "feat(api): add auth me endpoint"
-git push -u origin feature/api-auth-me
-```
----
-
-## Development Roadmap
-
-### Phase 1 — Foundation
-
-* monorepo setup
-* web, api, worker apps
-* shared packages
-* typed config
-* Supabase migrations
-* RLS foundation
-* health endpoints
-* initial API tests
-* Dev Container
-* Codex CLI sandbox workflow
-
-### Phase 2 — Authentication
-
-* `GET /auth/me`
-* user profile sync
-* frontend auth client
-* login/logout flow
-* protected frontend routes
-
-### Phase 3 — Tenant Management
-
-* create tenant
-* list tenants
-* tenant membership roles
-* owner/admin/viewer permission checks
-* tenant-scoped API guards
-
-### Phase 4 — Event Ingestion
-
-* event source definitions
-* event schema validation
-* `POST /events`
-* tenant quotas
-* idempotency keys
-* event storage
-
-### Phase 5 — Async Processing
-
-* Redis-backed queue
-* worker processing pipeline
-* retry strategy
-* dead-letter queue
-* job status tracking
-
-### Phase 6 — Observability
-
-* structured logging
-* request IDs
-* error format
-* metrics-style endpoints
-* basic dashboard views
-
-### Phase 7 — Deployment
-
-* Render deployment
-* production env setup
-* Supabase production project
-* CI checks
-* migration workflow
-* deployment documentation
-
-Deployment prep status: `render.yaml` at the repo root defines the
-api/worker/web/redis services as a Render Blueprint (not yet applied —
-applying it is a manual, human-triggered action, never something run
-automatically). See [docs/deployment.md](docs/deployment.md) for the
-production Supabase project setup, why production runs via `tsx`
-instead of a compiled build, and what's still manual (creating the
-Blueprint, filling in secrets, wiring the CI deploy-approval gate).
+`CHECKLIST.md` and `diary.md` together form a running, dated log of what was built, in what order, why, and how each change was verified — including several real bugs found only once the system was exercised against real infrastructure (a Postgres RLS-recursion failure, a default-privilege gap on a hosted Supabase project, a Render build-environment quirk), rather than assumed away.
 
 ---
 
 ## Engineering Principles
 
-This project follows several core principles:
-
-### Small changes
-
-Each feature should be implemented as a small, reviewable diff.
-
-### Typed boundaries
-
-Environment variables, request bodies, and shared contracts should be validated.
-
-### Backend-first correctness
-
-Business rules should live in backend services, not only in the frontend.
-
-### Tenant isolation
-
-All tenant-owned data must be scoped by tenant membership and permissions.
-
-### No secrets in Git
-
-Only `.env.example` is committed. Real credentials stay local or in deployment provider secret storage.
-
-### Tests before scale
-
-Important contracts should be tested before the system grows.
-
-### AI as assistant, not owner
-
-Codex can suggest and implement changes, but every diff must be reviewed by the developer.
+* **Small changes** — each feature lands as a small, reviewable diff
+* **Typed boundaries** — environment variables, request bodies, and shared contracts are all Zod-validated
+* **Backend-first correctness** — business rules (quotas, idempotency, role checks) live in backend services, not only the frontend
+* **Tenant isolation** — all tenant-owned data is scoped by RLS and, where role matters, by an explicit application-layer check
+* **No secrets in Git** — only `.env.example` is committed; real credentials live in local `.env` files or the deployment provider's secret storage
+* **Verify against real infrastructure, not just mocks** — the live test suites and Playwright E2E specs exist because mocked tests alone missed real RLS/migration/privilege bugs during this project's own development
+* **AI as assistant, not owner** — every diff is a proposal reviewed by a human before it merges or deploys
 
 ---
 
-## Current Status
+## Current Status & Roadmap
 
-Diary:
+The core product loop is complete and deployed: registration → tenant creation → invitations → API keys → server-to-server event ingestion → async processing → event log and stats in the UI. CI and production deployment are both live, not just configured.
 
-### 2026-05-25
+What remains, tracked in `CHECKLIST.md`:
 
-Done in `apps/api`:
+* real linting — every package's `lint` script is still a placeholder (`echo lint <name>`), not actual ESLint/Prettier enforcement
+* the optional manual-approval deploy gate described above, if ever wanted
 
-* invitation creation now generates a one-time accept token, stores only its hash on the invitation record, and queues email delivery work in `invitation_email_jobs`
-* owner invitation management now includes listing and revoke flows
-* invitation activation now uses `GET /invitations/accept` and `POST /invitations/accept` with authenticated email matching, expiry checks, archived-tenant checks, and single-use token acceptance
-* invitation and tenant APIs now expose invitation delivery state and expiry metadata for the frontend
-* invitation acceptance and invitation preview integration tests now cover token-based activation, expiry, archived tenants, and mismatched emails
-
-Done in `apps/worker`:
-
-* the worker now polls invitation email jobs from Supabase, sends invitation emails through Resend, and updates delivery status on both the job row and the invitation row
-* invitation emails now use `/accept-invite?token=...` links instead of raw invitation ids
-* worker retries now preserve queue state and clear raw accept tokens from jobs after successful or terminal processing
-
-Done in `apps/web`:
-
-* the frontend now has an `/accept-invite` page that loads invitation details, handles authenticated acceptance, and routes invited users into the tenant list after success
-* login and registration now preserve the invitation flow without copying the raw token through redirect query strings
-* auth session recovery now clears broken local Supabase refresh tokens instead of leaving the app in a repeated `401 /auth/me` state
-
-Done in `supabase` and security hardening:
-
-* `0010_invitation_email_delivery.sql` adds invitation delivery status fields and the durable invitation email job table
-* `0011_invitation_accept_tokens.sql` adds hashed invitation accept tokens, expiry metadata, and the token-based acceptance RPC
-* `0012_invitation_security_hardening.sql` locks down `invitation_email_jobs` with RLS and revokes direct table access from app roles
-* `0013_rls_membership_helpers.sql` replaces recursive membership/tenant/event/invitation policies with security-definer helper functions to avoid RLS recursion failures in live flows
-
-### 2026-05-18
-
-Done in `apps/api`:
-
-* health endpoints are mounted at `GET /health`, `GET /ready`, and `GET /live`
-* auth routes include `POST /auth/register` and protected `GET /auth/me`
-* bearer-token auth is enforced through `requireAuth`
-* tenant routes support list, create, get, update, archive, and owner-only invitations
-* shared API primitives now exist for `ApiError`, async route wrapping, request validation, and a global error handler
-* the event ingestion module now supports `POST /tenants/:tenantId/events` and `GET /tenants/:tenantId/events`
-* event create and list now use a user-scoped Supabase client instead of the service-role client
-* `requireAuth` now keeps the bearer access token on the request so RLS-backed services can use user context
-* integration tests now cover health, auth registration, auth me, tenant authorization, tenant creation, invitations, tenant CRUD, event creation, and event listing
-
-Done in `apps/web`:
-
-* Vue router includes protected routes for home, tenants, tenant creation, and tenant settings
-* guest-only routes exist for login and registration
-* auth state is managed through Pinia with Supabase session initialization
-* the frontend calls the backend for `GET /auth/me`, tenant listing, tenant creation, and tenant invitations
-* login and registration pages are implemented
-* tenants can be listed from the API, created from the UI, and opened in a tenant settings page
-* tenant settings currently support owner invitation flow, but not tenant update or archive actions
-
-Repo-level foundation still in place:
-
-* monorepo workspace structure is running across `apps/*` and `packages/*`
-* Supabase migrations and local config are present for the current tenant and event model
-* the project is set up for local development in the Dev Container with typed config packages and shared utilities
-
-Done in `supabase` and docs:
-
-* `0004_events.sql` adds the `events` table and initial event RLS foundation
-* `0005_events_insert_policy.sql` adds the event `INSERT` policy for authenticated tenant members
-* `0006_rls_rpc_foundation.sql` strengthens tenant and membership read policies, adds self-service user policies, hardens current RPCs for authenticated user-context calls, and grants authenticated execute access to the current tenant RPCs
-* [docs/rls-rpc-plan.md](/workspaces/eventops/docs/rls-rpc-plan.md:1) now records the route-by-route RLS vs RPC migration plan
-
----
-
-## Next Recommended Step
-
-Diary:
-
-### 2026-05-25
-
-Next:
-
-```txt
-invitation resend + cleanup
-```
-
-Why this should be next:
-
-* the invitation flow is now operational end to end, so the next highest-value work is operational resilience rather than core correctness
-* failed deliveries and expired invitations now have durable state in the database, which makes resend and cleanup the natural next slice
-* owners can already list invitations, so resend/expire actions can build directly on the current UI and API contracts
-* background delivery now exists in the worker, so retry/backoff and cleanup behavior can be extended without redesigning the architecture
-
-Recommended first slice:
-
-* add an owner-only resend invitation endpoint that regenerates a fresh accept token, resets expiry, and enqueues a new email job
-* add a small cleanup path for expired invitations and permanently failed email jobs
-* extend invitation list responses and the tenant settings UI with resend/error visibility
-* add focused worker tests around retry exhaustion and token regeneration behavior
-
-After that:
-
-* add invitation expiry and resend admin controls in the frontend
-* move worker-only delivery state into a dedicated private schema if stricter database isolation is needed
-* add a periodic cleanup or maintenance worker for expired invitations and stale queue rows
+For the detailed, dated history of every feature — what was built, the alternatives considered, and how each change was verified — see `CHECKLIST.md` and `diary.md`.
