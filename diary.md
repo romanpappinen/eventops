@@ -1,5 +1,49 @@
 # Diary
 
+Date: 2026-08-01 (4)
+
+## What changed
+
+Wired up the Redis instance that was provisioned in `render.yaml` and
+required by both `apps/api`'s and `apps/worker`'s env schemas but never
+actually used anywhere -- found while writing the new README. The
+concrete gap: `createRateLimiter` used `express-rate-limit`'s default
+in-memory store, which only works correctly for a single process.
+Render allows scaling a Starter-plan service to multiple instances by
+hand (confirmed via Render's docs, no plan upgrade required), and each
+instance would enforce its rate limit independently, silently
+multiplying the effective limit by the instance count. Added `ioredis`
++ `rate-limit-redis` (pinned to `4.2.3`, since the latest major needs
+`express-rate-limit >= 8.6.0` and this repo is on `7.5.1` -- checked via
+`npm view` peer deps rather than guessing) and a lazy singleton Redis
+client (`apps/api/src/lib/redis.ts`) with an `error` listener, since an
+unhandled `EventEmitter` error from ioredis would otherwise crash the
+whole process on a transient Redis blip. The store is skipped in favor
+of the default in-memory one when `NODE_ENV === 'test'`, since there is
+no Redis in the test environment.
+
+Tried to spin up a real local Redis in this sandbox for a live check
+(a portable `redis-server` npm package, then briefly considered
+`apt-get install redis-server`) -- the user pushed back on installing a
+Redis binary from an unfamiliar source into the sandbox just for a
+convenience check, which was the right call: neither was necessary, and
+this is exactly the kind of judgment call worth deferring to rather
+than optimizing for thoroughness.
+
+## What was verified
+
+`apps/api` typecheck clean, 103/103 tests (2 new in
+`rate-limit-store.test.ts`, mocking `express-rate-limit`/
+`rate-limit-redis`/the new redis client to assert store selection
+without needing a real connection). No live Redis check -- deferred to
+the real `eventops-redis` instance already running in production, which
+the wiring will exercise for real on next deploy.
+
+## Next concrete step
+
+None outstanding. Push/PR/merge is a user action, same as every other
+change this session.
+
 Date: 2026-08-01 (3)
 
 ## What changed
