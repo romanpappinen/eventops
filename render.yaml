@@ -17,7 +17,7 @@ services:
     plan: starter
     region: oregon
     branch: main
-    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    buildCommand: pnpm install --frozen-lockfile
     startCommand: pnpm --filter @eventops/api start
     healthCheckPath: /health
     envVars:
@@ -43,7 +43,7 @@ services:
     plan: starter
     region: oregon
     branch: main
-    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    buildCommand: pnpm install --frozen-lockfile
     startCommand: pnpm --filter @eventops/worker start
     envVars:
       - key: NODE_ENV
@@ -82,7 +82,7 @@ services:
     type: web
     runtime: static
     branch: main
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @eventops/web build
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @eventops/web build
     staticPublishPath: apps/web/dist
     envVars:
       # Vite bakes these in at build time -- they end up in the client
