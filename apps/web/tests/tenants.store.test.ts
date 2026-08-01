@@ -444,4 +444,56 @@ describe('tenants store', () => {
     expect(event.id).toBe('event-456')
     expect(store.events[0]?.id).toBe('event-456')
   })
+
+  it('loads event stats for a window through the authenticated API', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        item: {
+          windowDays: 7,
+          total: 8,
+          accepted: 2,
+          processed: 5,
+          failed: 1,
+        },
+      }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { useTenantsStore } = await import('../src/stores/tenants')
+    const store = useTenantsStore()
+
+    const stats = await store.fetchEventStats('access-token', 'tenant-123', 7)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/tenants/tenant-123/events/stats?windowDays=7',
+      {
+        headers: {
+          Authorization: 'Bearer access-token',
+        },
+      },
+    )
+    expect(stats).toEqual({ windowDays: 7, total: 8, accepted: 2, processed: 5, failed: 1 })
+    expect(store.eventStats).toEqual(stats)
+    expect(store.eventStatsStatus).toBe('idle')
+  })
+
+  it('surfaces an error when loading event stats fails', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'Failed to load event stats' }),
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { useTenantsStore } = await import('../src/stores/tenants')
+    const store = useTenantsStore()
+
+    await expect(store.fetchEventStats('access-token', 'tenant-123', 7)).rejects.toThrow(
+      'Failed to load event stats',
+    )
+    expect(store.eventStatsStatus).toBe('error')
+    expect(store.eventStatsError).toBe('Failed to load event stats')
+  })
 })

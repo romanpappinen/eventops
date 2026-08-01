@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import type {
     CreateEventDto,
     EventParamsDto,
+    EventStatsQueryDto,
     ListEventsQueryDto,
     TenantEventParamsDto,
 } from '@eventops/validation';
@@ -11,6 +12,7 @@ import {
     createEventForTenant,
     createEventViaApiKey,
     getEventForTenant,
+    getEventStatsForTenant,
     listEventsForTenant,
 } from './events.service.js';
 
@@ -25,6 +27,19 @@ export async function listEvents(req: AuthenticatedRequest, res: Response) {
     const { limit } = req.query as unknown as ListEventsQueryDto;
     const items = await listEventsForTenant(authToken, tenantId, { limit });
     return res.json({ items });
+}
+
+export async function getEventStats(req: AuthenticatedRequest, res: Response) {
+    const { tenantId } = req.params as TenantEventParamsDto;
+    const authToken = req.authToken;
+
+    if (!authToken) {
+        throw new Error('Authenticated request is missing access token');
+    }
+
+    const { windowDays } = req.query as unknown as EventStatsQueryDto;
+    const stats = await getEventStatsForTenant(authToken, tenantId, windowDays);
+    return res.json({ item: stats });
 }
 
 export async function getEvent(req: AuthenticatedRequest, res: Response) {

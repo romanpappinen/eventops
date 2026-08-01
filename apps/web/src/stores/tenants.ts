@@ -3,6 +3,7 @@ import {
   createTenant as createTenantRequest,
   createTenantApiKey as createTenantApiKeyRequest,
   createTenantEvent as createTenantEventRequest,
+  getTenantEventStats as getTenantEventStatsRequest,
   getTenants as getTenantsRequest,
   inviteTenantMember as inviteTenantMemberRequest,
   listTenantApiKeys as listTenantApiKeysRequest,
@@ -12,6 +13,7 @@ import {
   revokeTenantApiKey as revokeTenantApiKeyRequest,
   revokeTenantInvitation as revokeTenantInvitationRequest,
   type ApiKey,
+  type EventStats,
   type Tenant,
   type TenantEvent,
   type TenantInvitation,
@@ -47,6 +49,9 @@ export const useTenantsStore = defineStore('tenants', {
     eventsLoaded: false,
     eventsStatus: 'idle' as TenantStatus,
     eventsError: null as string | null,
+    eventStats: null as EventStats | null,
+    eventStatsStatus: 'idle' as TenantStatus,
+    eventStatsError: null as string | null,
   }),
   getters: {
     getById: (state) => (tenantId: string) => state.items.find((item) => item.id === tenantId) ?? null,
@@ -225,6 +230,20 @@ export const useTenantsStore = defineStore('tenants', {
       } catch (error) {
         this.eventsStatus = 'error'
         this.eventsError = error instanceof Error ? error.message : 'Failed to load events'
+        throw error
+      }
+    },
+    async fetchEventStats(accessToken: string, tenantId: string, windowDays: number) {
+      this.eventStatsStatus = 'loading'
+      this.eventStatsError = null
+
+      try {
+        this.eventStats = await getTenantEventStatsRequest(accessToken, tenantId, windowDays)
+        this.eventStatsStatus = 'idle'
+        return this.eventStats
+      } catch (error) {
+        this.eventStatsStatus = 'error'
+        this.eventStatsError = error instanceof Error ? error.message : 'Failed to load event stats'
         throw error
       }
     },

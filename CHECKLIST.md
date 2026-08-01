@@ -359,9 +359,43 @@ observability/deployment polish.
       pino-http's automatic per-request access log, and the
       `errorHandler`'s explicit `WARN`/`ERROR` log entries all carry the
       same id and actually appear in the log output.)
-- [ ] Out of scope for this pass: metrics-style endpoints and dashboard
-      views (README lists these too, but they're a bigger, separate
-      effort once basic logging/request IDs exist)
+- [x] Metrics-style endpoints/dashboard views (done 2026-08-01, scoped
+      down from the original README idea once the user clarified this
+      is for the **tenant end user**, not ops/Prometheus-style metrics
+      -- a product view inside the existing web UI, not a new external
+      service to stand up). New `GET /tenants/:tenantId/events/stats`
+      endpoint (`?windowDays=1-90`, default 7): three parallel
+      `count(exact, head:true)` queries against `events` (one per
+      `accepted`/`processed`/`failed`, matching the one existing count
+      precedent, `assertEventQuotaNotExceeded`), summed into `total` in
+      code. Deliberately does not derive `total` as
+      "all rows minus processed minus failed" -- the DB still permits a
+      4th status, `archived`, that no code sets today but isn't
+      schema-forbidden from being set later; querying the three
+      meaningful statuses directly excludes any future `archived` row
+      instead of silently miscounting it as `accepted`. No new
+      migration -- existing indexes
+      (`events_tenant_status_created_at_idx`) already cover the query
+      shape. Same `requireTenantAccess()` (any active member) as the
+      event log itself, not owner-gated -- aggregate counts are less
+      sensitive than the raw log every member can already read.
+      Embedded as a new "Stats" card in `TenantEventsPage.vue` (window
+      buttons: 24h/7d/30d) rather than a new route -- this repo's
+      pages are never split into child components or given sidebar
+      entries for tenant sub-views, so this matched the existing
+      `TenantEditPage.vue`/`TenantEventsPage.vue` size convention
+      instead of introducing a new pattern. Verified: `apps/api`
+      101/101 tests (7 new), `apps/web` 14/14 tests (2 new), typecheck
+      clean across validation/api/web. Live check against the real
+      local Supabase stack: registered a fresh user, created a tenant,
+      sent 2 small + 1 oversized event, confirmed `GET .../events/stats`
+      returned `{total:3, processed:2, failed:1, accepted:0}` matching
+      the real worker outcome, plus confirmed `windowDays=0`/`91`
+      correctly 400. Browser check (Playwright): logged in, navigated
+      to the tenant's events page through real in-app links, confirmed
+      the stats card renders the same numbers with a 33.3% failure
+      rate, clicked the 30d window button, confirmed it re-fetches
+      correctly.
 
 ### 4. Deployment prep (README Phase 7, 0% done today)
 

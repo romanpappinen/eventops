@@ -1,5 +1,44 @@
 # Diary
 
+Date: 2026-08-01 (2)
+
+## What changed
+
+Added a tenant-facing event stats view -- the last open item from
+`CHECKLIST.md`'s "Observability basics" section, rescoped once the user
+clarified they meant something for the *end user* (tenant members), not
+ops/Prometheus-style metrics. New `GET /tenants/:tenantId/events/stats`
+endpoint (`apps/api/src/modules/events/`) runs three parallel count
+queries against `events` (accepted/processed/failed, matching the
+existing `assertEventQuotaNotExceeded` count-query shape) over a
+`windowDays` window (1-90, default 7), and a "Stats" card in
+`TenantEventsPage.vue` shows total/processed/failed/in-queue counts plus
+a failure-rate percentage, with 24h/7d/30d window buttons. No migration
+needed -- existing indexes already cover the query. Planned via
+`EnterPlanMode` with an `Explore` + `Plan` subagent pass first (see
+`/home/node/.claude/plans/scalable-wiggling-sloth.md`).
+
+## What was verified
+
+`apps/api` 101/101 tests (7 new in `events-stats.test.ts`), `apps/web`
+14/14 (2 new in `tenants.store.test.ts`), typecheck clean across
+validation/api/web. Live check against the real local Supabase stack:
+registered a fresh user, created a tenant, sent 2 small + 1 oversized
+event through the real ingestion path, confirmed the stats endpoint
+returned exactly what the real worker produced
+(`{total:3, processed:2, failed:1, accepted:0}`), plus confirmed
+`windowDays=0`/`91` both 400. Browser check (Playwright, throwaway
+script per this session's established pattern): logged in, navigated to
+the tenant's events page through real in-app links (not direct `goto`,
+per the session's earlier session-rehydration-race finding), confirmed
+the stats card renders correctly and the window buttons re-fetch.
+
+## Next concrete step
+
+Nothing outstanding. `CHECKLIST.md`'s last open item from the
+"Observability basics"/dashboard section is now closed; only real
+linting remains as long-standing, non-blocking debt.
+
 Date: 2026-08-01
 
 ## What changed

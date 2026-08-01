@@ -43,3 +43,9 @@ export const listEventsQueryDtoSchema = z.object({
 }).strict();
 
 export type ListEventsQueryDto = z.infer<typeof listEventsQueryDtoSchema>;
+
+export const eventStatsQueryDtoSchema = z.object({
+    windowDays: z.coerce.number().int().min(1).max(90).optional().default(7),
+}).strict();
+
+export type EventStatsQueryDto = z.infer<typeof eventStatsQueryDtoSchema>;
