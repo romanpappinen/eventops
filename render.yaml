@@ -34,6 +34,7 @@ services:
       - key: REDIS_URL
         fromService:
           name: eventops-redis
+          type: keyvalue
           property: connectionString
 
   - name: eventops-worker
@@ -74,6 +75,7 @@ services:
       - key: REDIS_URL
         fromService:
           name: eventops-redis
+          type: keyvalue
           property: connectionString
 
   - name: eventops-web
