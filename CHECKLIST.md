@@ -257,19 +257,15 @@ observability/deployment polish.
       cannot push myself, no git credentials in this sandbox; confirmed
       `git rev-parse HEAD` == `git rev-parse origin/feature/next-small-task`
       after fetch, both at `a4409b0`)
-- [ ] The workflow itself has **not run yet**: it only triggers on
-      `push` to `main` or on a `pull_request` event, and pushing a
-      feature branch matches neither. Confirmed via an unauthenticated
-      GitHub API call (`/repos/.../pulls?state=open&head=...`) that no PR
-      is currently open from `feature/next-small-task`. Opening a PR into
-      `main` will trigger the first real run — needs to happen on GitHub
-      (no `gh` CLI / credentials available here either); ask me to draft
-      the PR title/description from this session's commits if useful.
-- [ ] Branch protection note (not something I can set myself — needs the
-      user to enable it in GitHub repo settings once the workflow exists,
-      and only takes effect once the workflow has actually run at least
-      once on the default branch): require the CI check to pass before
-      merging to `main`
+- [x] The workflow's first real run (done 2026-08-01 by the user): opened
+      PR #3 from `feature/next-small-task` into `main`, CI ran and passed
+      (`typecheck` + `test`, run #1, `success`). Merged; a second `push`
+      run on `main` also passed (run #2). Every subsequent PR/merge this
+      session triggered CI the same way, all green.
+- [x] Branch protection (done 2026-08-01 by the user): required status
+      check `test` enabled on `main` via GitHub's ruleset UI ("Require
+      status checks to pass"), confirmed available to select once the
+      workflow had run at least once, per the note above.
 - [ ] Out of scope for this pass: real linting (`lint` scripts in every
       package are currently `echo lint <name>` placeholders, not actual
       ESLint/Prettier checks) — flagging as separate follow-up debt, not
@@ -437,19 +433,19 @@ live.
       anon/authenticated `EXECUTE`-privilege check that caught a real gap
       locally per `docs/rls-rpc-plan.md`, collecting the three API keys,
       and updating Auth redirect URLs away from `localhost`.)
-- [ ] Wire the CI pipeline (once item 1 above exists) to gate a deploy
-      step behind manual approval, per `CLAUDE.md`'s "the only path to
-      production" section
+- [ ] Wire the CI pipeline to gate a deploy step behind manual approval,
+      per `CLAUDE.md`'s "the only path to production" section
       (scoped but not implemented 2026-07-14: `docs/deployment.md`
       section 4 documents the approach -- disable Render's own
       auto-deploy, add a second GitHub Actions job gated on `needs: test`
       + a `production` GitHub Environment with a required reviewer, that
-      calls each service's Render Deploy Hook URL on approval. Left
-      unimplemented because it depends on state that doesn't exist yet:
-      Deploy Hook URLs only exist after the Blueprint above has actually
-      been created in Render once, and configuring a required reviewer
-      on a GitHub Environment is a repo-settings action I can't take
-      from here.)
+      calls each service's Render Deploy Hook URL on approval. The
+      Blueprint now exists in Render (done 2026-08-01, see the new
+      "Production deployment" section below), so Deploy Hook URLs are
+      available -- the remaining blocker is a decision, not a technical
+      one: user explicitly opted to keep Render's own auto-deploy on
+      push to `main` rather than add a manual-approval gate (2026-08-01).
+      Revisit only if the user asks for it later.)
 - [x] Deployment documentation in `README.md`
       (done 2026-07-14: added a short "Deployment prep status" note under
       Phase 7 in the roadmap, pointing at `render.yaml` and
@@ -618,3 +614,79 @@ user agreed. Recorded here so the idea isn't lost, not scheduled yet.
       events, clicked Refresh, screenshot confirms the failed row shows
       its reason in red under the status and the processed row shows
       clean, both attributed to the API key by name.
+
+## Production deployment (done 2026-08-01)
+
+CI, branch protection, and Render Blueprint were prepared earlier
+(see "Deployment prep" above) but never actually applied. Done this
+session, all by the user clicking through Render/Supabase/GitHub
+dashboards (no credentials for any of these exist in this sandbox) with
+me diagnosing failures from logs and shipping fixes as normal commits:
+
+- [x] Opened PR #3 -> CI green -> merged (first real CI run, see "CI
+      pipeline" above). `.env.example` updated with the 3
+      event-processing worker vars.
+- [x] Render Blueprint fix: `render.yaml`'s `REDIS_URL` `fromService`
+      entries were missing a now-required `type: keyvalue` field --
+      Render's Blueprint validator rejected the file with "empty but
+      required" until fixed (PR #4).
+- [x] Render Blueprint fix: `eventops-web`'s (and, preventatively,
+      `eventops-api`/`eventops-worker`'s) `buildCommand` ran
+      `corepack enable && pnpm install ...`. Render's static-site
+      builder has a read-only `/usr/bin`, and `corepack enable` tried to
+      relink `/usr/bin/pnpm` there, failing with `EROFS`. Turned out
+      redundant anyway -- Render already installs the `packageManager`-
+      pinned pnpm version automatically before `buildCommand` runs.
+      Dropped `corepack enable &&` from all three (PR #5).
+- [x] Render Blueprint created: `eventops-api`, `eventops-worker`,
+      `eventops-web`, `eventops-redis`, all `starter` plan
+      ($24/month total; `eventops-web` is a free static site). User
+      confirmed this is on top of, not covered by, their separate Render
+      workspace plan.
+- [x] Production Supabase project created; all 18 migrations applied via
+      `supabase db push` from the user's own machine (not this sandbox).
+- [x] Render env vars filled in for all three services (Supabase triad,
+      Resend key, `APP_WEB_BASE_URL`, `VITE_*` vars) and Supabase Auth
+      redirect URLs pointed at the deployed `eventops-web` URL instead
+      of `localhost`.
+- [x] Production bug found via `eventops-api`'s first real request logs:
+      `permission denied for table users` (Postgres `42501`).
+      `authenticated` had no base table privileges on `public.users` --
+      Supabase's "Automatically expose new tables" dashboard setting did
+      not retroactively grant privileges for tables created via
+      `supabase db push` (only local dev's `supabase start` seeds this
+      automatically, which is why the gap never showed up until a real
+      hosted project). Fixed with migration
+      `0019_grant_public_table_privileges.sql`: explicit
+      `select/insert/update/delete` grants to `anon, authenticated` on
+      every public app table, plus `alter default privileges` so future
+      tables can't hit the same gap. Applied to both the local stack and
+      production.
+- [x] Second instance of the same bug class, found the same way: a real
+      `POST /events` request (server-to-server ingestion, via a real API
+      key) returned `503` from `requireApiKey`. The middleware silently
+      swallowed the underlying Supabase error, so first had to add
+      `req.log?.error(...)` logging to `require-api-key.ts` (it had none
+      at all -- a real observability gap, unlike `errorHandler` which
+      already logged everything) before the real cause was visible:
+      `permission denied for table api_keys` -- this time `service_role`
+      itself lacked privileges, because `api_keys` (migration `0017`)
+      was created well after the project's initial bootstrap, and
+      `service_role`'s usual "full access to everything" default
+      apparently only covers tables that existed at project creation.
+      Fixed with migration
+      `0020_grant_service_role_table_privileges.sql`, same shape as
+      `0019` but for `service_role`.
+- [x] Full live verification against production: sent a real event via
+      `POST /events` with a real API key and zero Supabase session (small
+      payload -> `201`, `status: accepted`), sent a second ~40KB payload
+      the same way, refreshed the real deployed UI, and confirmed both
+      events reached their correct terminal state (`processed` and
+      `failed` with the exact expected `failureReason` text), correctly
+      attributed to the API key by name. Test API key revoked
+      immediately after (it had been pasted in plaintext during
+      debugging).
+- [ ] Deploy gate behind manual approval: user explicitly declined --
+      keeping Render's default auto-deploy on push to `main`. See the
+      "Deployment prep" section above for the technical plan if this
+      changes later.
