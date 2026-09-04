@@ -1,3 +1,5 @@
+import type { EventItem } from '@eventops/shared'
+
 export interface AuthMeUser {
   id: string
   email: string | null
@@ -42,24 +44,7 @@ export interface ApiKey {
   rawKey?: string
 }
 
-export interface TenantEvent {
-  id: string
-  tenantId: string
-  source: string
-  type: string
-  subject: string | null
-  occurredAt: string
-  receivedAt: string
-  payload: Record<string, unknown>
-  metadata: Record<string, unknown>
-  status: string
-  createdByUserId: string | null
-  createdByApiKeyId: string | null
-  idempotencyKey: string | null
-  failureReason: string | null
-  createdAt: string
-  updatedAt: string
-}
+export type TenantEvent = EventItem
 
 export interface EventStats {
   windowDays: number

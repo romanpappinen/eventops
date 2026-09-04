@@ -1853,3 +1853,52 @@ Current result:
 3. Implement the remaining event route gaps, especially `GET /tenants/:tenantId/events/:eventId`, using the same user-scoped RLS pattern.
 4. Revisit runtime validation cleanup so event query validation is fully shared instead of partially local in controllers.
 5. Keep updating `diary.md` after each iteration with what changed, what was verified, and the next concrete step.
+
+---
+
+Date: 2026-09-04
+
+## Iteration update
+
+A repo review turned up two small pieces of duplicated logic (a hand-written
+frontend type shadowing a shared one, and the same SHA-256 hashing one-liner
+written twice in `apps/api`). This iteration closes both.
+
+Done:
+
+* added `sha256Hex(input)` to `packages/shared/src/lib/crypto.ts`, exported
+  from the package index
+* `apps/api/src/modules/api-keys/api-keys.types.ts`'s `hashApiKey` and
+  `apps/api/src/modules/tenants/tenant.service.ts`'s
+  `hashInvitationAcceptToken` now both delegate to `sha256Hex` instead of
+  each calling `node:crypto`'s `createHash` independently — same behavior,
+  one implementation
+* `packages/shared` gained `@types/node` as a devDependency (needed once it
+  imports `node:crypto`), following the same pattern already used by
+  `packages/config`/`packages/logger`
+* `apps/web` now depends on `@eventops/shared` and its `TenantEvent` type in
+  `apps/web/src/lib/api.ts` is `export type TenantEvent = EventItem` (from
+  `@eventops/shared`) instead of a hand-duplicated interface — the exported
+  name is unchanged, so `stores/tenants.ts` and `TenantEventsPage.vue` needed
+  no changes
+
+Verified:
+
+* `pnpm --filter @eventops/shared typecheck` — passes
+* `pnpm --filter @eventops/api typecheck` — passes
+* `pnpm --filter @eventops/api test` — 19 files / 103 tests passing,
+  including the `hashApiKey` determinism test and the invitation-accept
+  tests that exercise `hashInvitationAcceptToken`
+* `pnpm --filter @eventops/web typecheck` — passes
+* `pnpm --filter @eventops/web test` — 2 files / 14 tests passing
+
+## What we need to do next
+
+1. `pnpm install` currently wants to wipe and rebuild every `node_modules`
+   from scratch when run at the repo root (prompts interactively instead of
+   just linking the new `@eventops/shared` workspace dependency) — the new
+   symlinks for this change were added by hand to match the existing
+   `.pnpm`-store layout. Worth investigating why a plain dependency add
+   triggers a full reinstall before it causes friction on a real onboarding.
+2. Continue the RLS/RPC migration work tracked earlier in this log
+   (`docs/rls-rpc-plan.md` open items) — unrelated to this iteration.

@@ -2,7 +2,8 @@ import type { AuthenticatedRequest } from '../../middleware/require-auth.js';
 import { getSupabaseAdmin, getSupabaseUser } from '../../lib/supabase.js';
 import { ApiError } from '../../lib/api-error.js';
 import { ensureUserProfile } from '../auth/ensure-user-profile.js';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { sha256Hex } from '@eventops/shared';
 import type {
     AcceptInvitationInput,
     CreateTenantInput,
@@ -93,7 +94,7 @@ function createInvitationAcceptToken() {
 }
 
 function hashInvitationAcceptToken(token: string) {
-    return createHash('sha256').update(token).digest('hex');
+    return sha256Hex(token);
 }
 
 async function enqueueInvitationEmail(invitationId: string, acceptToken: string) {
