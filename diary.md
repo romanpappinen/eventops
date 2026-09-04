@@ -1902,3 +1902,72 @@ Verified:
    triggers a full reinstall before it causes friction on a real onboarding.
 2. Continue the RLS/RPC migration work tracked earlier in this log
    (`docs/rls-rpc-plan.md` open items) — unrelated to this iteration.
+
+---
+
+Date: 2026-09-04
+
+## Production incident: 42501 on list_pending_invitation_email_jobs
+
+Reported by the user against the live deployment: the worker started
+getting `403 / 42501 permission denied for function
+list_pending_invitation_email_jobs` on
+`POST /rest/v1/rpc/list_pending_invitation_email_jobs`.
+
+Root cause: migration `0014_invitation_email_jobs_private_schema.sql`
+created 7 `security definer` RPCs for the invitation-email-job queue and
+revoked EXECUTE from `PUBLIC`, on the assumption (stated in its own
+comment) that `service_role` "bypasses grants" the way it bypasses RLS.
+That's wrong — `service_role` only gets EXECUTE via an explicit grant or
+Supabase's default privileges, and (per the precedent already recorded in
+migrations `0019`/`0020` for tables) those defaults don't apply
+retroactively on this hosted project to objects created after initial
+project bootstrap. These 7 functions were added well after bootstrap, so
+`service_role` never had EXECUTE on any of them.
+
+Checked for other instances of the same gap: grepped every
+`getSupabaseAdmin()` call site in `apps/api` and every `rpc/...` call in
+`apps/worker`. Every other service-role call is a plain table operation
+(`tenants`, `tenant_invitations`, `events` — already covered by `0020`'s
+table grants), not a function call. The only RPC ever called with
+`service_role` is `enqueue_invitation_email_job`, part of this same
+group. So the 7 functions in this migration are the complete scope of
+the bug, not just the one that happened to surface first.
+
+Fix: added `supabase/migrations/0021_invitation_email_job_rpc_service_role_grant.sql`
+— explicit `grant execute ... to service_role` on all 7 functions, plus
+`alter default privileges in schema public grant execute on functions to
+service_role` (mirrors 0020's same forward-looking guard for tables, so a
+future function added to `public` doesn't silently repeat this).
+
+Security note (asked and answered in chat before writing the migration):
+this grant only affects `service_role` — `anon`/`authenticated` keep
+EXECUTE revoked per `0014`/`0015`, so there's no new public/browser
+surface. `service_role` is already used by both `apps/api` (admin client,
+narrow flows) and `apps/worker` (all three loops), and already has full
+table-level access + RLS bypass from earlier migrations, so this is a
+small addition to an already-large trust boundary, not a new one.
+
+Verified: could not apply against a live Supabase instance —
+`pnpm exec supabase status` failed reading `.env` (blocked by the
+project's own secrets boundary, and no local Docker stack available in
+this sandbox). Migration syntax follows the same `GRANT`/`ALTER DEFAULT
+PRIVILEGES` pattern already proven to apply cleanly in `0019`/`0020`.
+
+## What we need to do next
+
+1. **A human needs to apply this migration to production** (this
+   assistant does not run production migrations, per `CLAUDE.md`) — via
+   the normal PR review → CI → deploy path, or `supabase db push` against
+   the production project directly if that's the faster path for an
+   active incident.
+2. After the fix is live, confirm the worker's invitation-email loop
+   recovers (no more 42501s in logs) and that queued invitation emails
+   from the outage window still get picked up (jobs stay `pending` until
+   claimed, so nothing should have been lost — worth double-checking).
+3. Given this is the second time the same root cause (default privileges
+   not applying retroactively on this hosted project) has bitten a
+   different object type, it may be worth a standing rule: every new
+   migration that adds a table or `security definer` function ends with
+   an explicit grant to every role that needs it, rather than relying on
+   Supabase's dashboard "auto-expose" setting at all.
