@@ -1971,3 +1971,73 @@ PRIVILEGES` pattern already proven to apply cleanly in `0019`/`0020`.
    migration that adds a table or `security definer` function ends with
    an explicit grant to every role that needs it, rather than relying on
    Supabase's dashboard "auto-expose" setting at all.
+
+---
+
+Date: 2026-09-06
+
+## Added password reset flow
+
+Manual testing surfaced that "forgot password" didn't exist at all —
+no route, no page, not even a dead link on the login page, and no
+Supabase redirect config for it. Login/logout already go straight from
+`apps/web` to Supabase (`supabase.auth.signInWithPassword`/`signOut` in
+`stores/auth.ts`), so this follows the same client-direct pattern
+instead of adding a backend endpoint.
+
+Considered reusing the invitation email flow (custom Resend HTTP-API
+job queue in `apps/worker` + `private.invitation_email_jobs`) since the
+user asked about it directly, but that flow exists specifically because
+Supabase Auth's own SMTP was never wired up for invitations. The user
+has since installed a Resend integration on the Supabase project
+itself, so `resetPasswordForEmail`'s built-in email now goes out
+through Resend too, at the project level — no need to hand-roll
+token generation/hashing/expiry to match the invitation architecture.
+
+Changes:
+- `stores/auth.ts`: `requestPasswordReset(email)` and
+  `updatePassword(newPassword)` actions, plus a `passwordResetMessage`
+  state field (mirrors the existing `registrationMessage` pattern).
+- New pages `ForgotPasswordPage.vue` and `ResetPasswordPage.vue`
+  (styled like `LoginPage.vue`/`RegisterPage.vue`), new routes
+  `/forgot-password` and `/reset-password` in
+  `core/navigation/routes.ts`.
+- `/reset-password` intentionally has no `guestOnly`/`requiresAuth`
+  meta: opening the emailed recovery link gives the browser a
+  temporary Supabase session, so `guestOnly` would bounce the user to
+  `/` before they could set a new password (matches how
+  `/accept-invite` is already configured).
+- `LoginPage.vue`: added the missing "Forgot password?" link and a
+  success-message slot for `passwordResetMessage`.
+- `supabase/config.toml`: `additional_redirect_urls` only listed
+  `https://127.0.0.1:3000` (the API's port), not the web app's actual
+  Vite dev port `5173` — added `http://localhost:5173` and
+  `http://127.0.0.1:5173` so the local reset-password redirect is
+  allow-listed. This is local-CLI config only; the hosted project's
+  redirect allow-list is separate (dashboard-managed) and wasn't
+  touched.
+
+Verified: `pnpm --filter web typecheck` (`vue-tsc --noEmit`) passes.
+Along the way, found `node_modules` was broken (`vue-tsc` and other
+packages were dangling symlinks into the pnpm store, so any `pnpm run`
+in `apps/web` failed with `MODULE_NOT_FOUND` before I'd even touched
+anything) — unrelated to this change, matches the pre-existing note
+about `pnpm install` wanting a from-scratch reinstall. Fixed by running
+`pnpm install --frozen-lockfile` with `CI=true` (the interactive
+"remove and reinstall node_modules" prompt otherwise silently no-ops
+under a non-TTY shell); lockfile untouched. No test files exist yet for
+any auth page (Login/Register/InvitationAccept have none either), so no
+new test scaffolding was added for this change.
+
+## What we need to do next
+
+1. Manual walkthrough against a running Supabase instance: submit the
+   forgot-password form, follow the emailed (or local Inbucket) link to
+   `/reset-password`, set a new password, confirm redirect to `/login`
+   with the success message, sign in with the new password. Not run in
+   this session — no live Supabase/email available here.
+2. The hosted/production Supabase project's own redirect URL allow-list
+   needs the production `/reset-password` URL added via the dashboard —
+   out of scope for this repo change, a human needs to do it.
+3. Commit this change once the above is confirmed working, or right
+   away if the user wants to test it themselves first.

@@ -36,6 +36,7 @@ export const useAuthStore = defineStore('auth', {
     error: null as string | null,
     initialized: false,
     registrationMessage: null as string | null,
+    passwordResetMessage: null as string | null,
   }),
   getters: {
     isAuthenticated: (state) => Boolean(state.session && state.user),
@@ -142,6 +143,7 @@ export const useAuthStore = defineStore('auth', {
       this.status = 'loading'
       this.error = null
       this.registrationMessage = null
+      this.passwordResetMessage = null
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -199,6 +201,41 @@ export const useAuthStore = defineStore('auth', {
         this.error = error instanceof Error ? error.message : 'Registration failed'
         return 'error'
       }
+    },
+    async requestPasswordReset(email: string) {
+      this.status = 'loading'
+      this.error = null
+      this.passwordResetMessage = null
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+
+      if (error) {
+        this.status = 'error'
+        this.error = error.message
+        return false
+      }
+
+      this.status = 'idle'
+      this.passwordResetMessage =
+        'If an account exists for that email, a password reset link has been sent.'
+      return true
+    },
+    async updatePassword(newPassword: string) {
+      this.status = 'loading'
+      this.error = null
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+
+      if (error) {
+        this.status = 'error'
+        this.error = error.message
+        return false
+      }
+
+      this.status = 'idle'
+      return true
     },
     async logout() {
       const { error } = await supabase.auth.signOut()
