@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { acceptInvitation, getInvitationAcceptDetails, type InvitationAcceptDetails } from '../lib/api'
+import {
+  acceptInvitation,
+  acceptInvitationById,
+  getInvitationAcceptDetails,
+  getPendingInvitationForCurrentUser,
+  type InvitationAcceptDetails,
+} from '../lib/api'
 import { routeNames } from '../core/navigation/routes'
 import { useAuthStore } from '../stores/auth'
 
@@ -15,6 +21,10 @@ const accepting = ref(false)
 const error = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
 const storedToken = ref('')
+// Set when the invitation was found via the authenticated-email fallback
+// lookup (no token available) rather than the usual ?token= flow -- see
+// loadInvitation(). Determines which accept endpoint onAccept() calls.
+const acceptViaId = ref(false)
 
 const token = computed(() => storedToken.value)
 const isAuthenticated = computed(() => auth.isAuthenticated)
@@ -38,23 +48,41 @@ function syncTokenFromLocation() {
 }
 
 async function loadInvitation() {
-  if (!token.value) {
+  loading.value = true
+  error.value = null
+  acceptViaId.value = false
+
+  if (!auth.session?.access_token) {
     invitation.value = null
-    error.value = 'Invitation token is missing.'
     loading.value = false
     return
   }
 
-  loading.value = true
-  error.value = null
+  if (!token.value) {
+    // No token in the URL/sessionStorage -- this happens when a brand-new
+    // user's session came from confirming their email in a separate
+    // browser context, losing the token the invite link originally set.
+    // Fall back to looking up a pending invitation by their (verified)
+    // email instead.
+    try {
+      const pending = await getPendingInvitationForCurrentUser(auth.session.access_token)
+
+      if (pending) {
+        invitation.value = pending
+        acceptViaId.value = true
+      } else {
+        invitation.value = null
+      }
+    } catch (loadError) {
+      invitation.value = null
+      error.value = loadError instanceof Error ? loadError.message : 'Failed to load invitation'
+    } finally {
+      loading.value = false
+    }
+    return
+  }
 
   try {
-    if (!auth.session?.access_token) {
-      invitation.value = null
-      loading.value = false
-      return
-    }
-
     invitation.value = await getInvitationAcceptDetails(auth.session.access_token, token.value)
   } catch (loadError) {
     invitation.value = null
@@ -65,7 +93,11 @@ async function loadInvitation() {
 }
 
 async function onAccept() {
-  if (!auth.session?.access_token || !token.value) {
+  if (!auth.session?.access_token) {
+    return
+  }
+
+  if (!acceptViaId.value && !token.value) {
     return
   }
 
@@ -73,7 +105,11 @@ async function onAccept() {
   error.value = null
 
   try {
-    await acceptInvitation(auth.session.access_token, token.value)
+    if (acceptViaId.value && invitation.value) {
+      await acceptInvitationById(auth.session.access_token, invitation.value.invitationId)
+    } else {
+      await acceptInvitation(auth.session.access_token, token.value)
+    }
     successMessage.value = 'Invitation accepted. You can now access the tenant.'
     sessionStorage.removeItem('invitation_accept_token')
     await loadInvitation()
@@ -166,6 +202,22 @@ watch(
           <p v-else-if="invitation.status === 'archived'" class="feedback feedback-error">
             This tenant has been archived.
           </p>
+        </template>
+
+        <template v-else>
+          <p v-if="!isAuthenticated" class="intro">
+            Sign in or open the link from your invitation email to accept an invitation.
+          </p>
+          <p v-else class="feedback feedback-error">
+            No pending invitation was found for your account.
+          </p>
+
+          <div v-if="!isAuthenticated" class="actions">
+            <RouterLink class="primary-link" :to="{ name: routeNames.login }"> Sign in </RouterLink>
+            <RouterLink class="secondary-link" :to="{ name: routeNames.register }">
+              Create account
+            </RouterLink>
+          </div>
         </template>
       </template>
     </section>

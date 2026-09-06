@@ -75,6 +75,12 @@ export const acceptInvitationSchema = z.object({
 
 export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;
 
+export const acceptInvitationByIdSchema = z.object({
+    invitationId: z.string().uuid(),
+}).strict();
+
+export type AcceptInvitationByIdInput = z.infer<typeof acceptInvitationByIdSchema>;
+
 export const inviteTenantMemberSchema = z.object({
     email: z.string().trim().email().transform((value) => value.toLowerCase()),
     role: z.enum(['admin', 'member']).default('member'),

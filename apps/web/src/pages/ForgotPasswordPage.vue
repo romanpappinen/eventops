@@ -1,38 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { routeNames } from '../core/navigation/routes'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
-const route = useRoute()
-const router = useRouter()
 
 const email = ref('')
-const password = ref('')
+const submitted = ref(false)
 
 const buttonLabel = computed(() =>
-  auth.status === 'loading' ? 'Signing in...' : 'Sign in',
+  auth.status === 'loading' ? 'Sending link...' : 'Send reset link',
 )
 
 async function onSubmit() {
-  const success = await auth.login(email.value, password.value)
-  password.value = ''
-
-  if (success) {
-    const invitationToken = sessionStorage.getItem('invitation_accept_token')
-    const redirect =
-      typeof route.query.redirect === 'string' && route.query.redirect.length > 0
-        ? route.query.redirect
-        : null
-
-    if (invitationToken) {
-      await router.push({ name: routeNames.invitationAccept })
-      return
-    }
-
-    await router.push(redirect ?? { name: routeNames.home })
-  }
+  const success = await auth.requestPasswordReset(email.value)
+  submitted.value = success
 }
 </script>
 
@@ -40,10 +23,10 @@ async function onSubmit() {
   <main class="auth-page">
     <section class="auth-panel">
       <p class="eyebrow">EventOps Access</p>
-      <h1>Sign in to your operations console.</h1>
+      <h1>Reset your password.</h1>
       <p class="intro">
-        Use your Supabase account to enter the workspace. Protected routes stay
-        behind the backend-authenticated user flow.
+        Enter the email address for your account and we'll send you a link to
+        set a new password.
       </p>
 
       <form class="auth-form" @submit.prevent="onSubmit">
@@ -59,22 +42,6 @@ async function onSubmit() {
           />
         </label>
 
-        <label class="field">
-          <span>Password</span>
-          <input
-            v-model="password"
-            type="password"
-            name="password"
-            autocomplete="current-password"
-            placeholder="Enter your password"
-            required
-          />
-        </label>
-
-        <RouterLink class="forgot-link" :to="{ name: routeNames.forgotPassword }">
-          Forgot password?
-        </RouterLink>
-
         <p v-if="auth.error" class="feedback feedback-error">
           {{ auth.error }}
         </p>
@@ -84,27 +51,13 @@ async function onSubmit() {
         </button>
       </form>
 
-      <p v-if="auth.registrationMessage" class="feedback feedback-success">
-        {{ auth.registrationMessage }}
-      </p>
-
-      <p v-if="auth.passwordResetMessage" class="feedback feedback-success">
+      <p v-if="submitted && auth.passwordResetMessage" class="feedback feedback-success">
         {{ auth.passwordResetMessage }}
       </p>
 
       <p class="footnote">
-        Need an account?
-        <RouterLink
-          :to="{
-            name: routeNames.register,
-            query:
-              typeof route.query.redirect === 'string'
-                ? { redirect: route.query.redirect }
-                : {},
-          }"
-        >
-          Register
-        </RouterLink>
+        Remembered your password?
+        <RouterLink :to="{ name: routeNames.login }"> Sign in </RouterLink>
       </p>
     </section>
   </main>
@@ -215,15 +168,6 @@ h1 {
 
 .footnote a {
   color: var(--accent-strong);
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.forgot-link {
-  justify-self: end;
-  margin-top: -6px;
-  color: var(--accent-strong);
-  font-size: 13px;
   font-weight: 700;
   text-decoration: none;
 }

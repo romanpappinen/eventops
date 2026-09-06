@@ -1,7 +1,32 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { getPendingInvitationForCurrentUser } from '../lib/api'
+import { routeNames } from '../core/navigation/routes'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
+const router = useRouter()
+
+// Catches the case where a user confirmed their email (via a separate
+// browser context, e.g. clicking a confirmation link from an email
+// client) and lost the invitation token that would normally route them
+// to /accept-invite -- see InvitationAcceptPage.vue's fallback lookup.
+onMounted(async () => {
+  if (!auth.session?.access_token) {
+    return
+  }
+
+  try {
+    const pending = await getPendingInvitationForCurrentUser(auth.session.access_token)
+
+    if (pending) {
+      await router.push({ name: routeNames.invitationAccept })
+    }
+  } catch {
+    // Non-critical background check -- ignore failures.
+  }
+})
 </script>
 
 <template>

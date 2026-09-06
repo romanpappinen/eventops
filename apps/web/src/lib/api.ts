@@ -517,3 +517,35 @@ export async function acceptInvitation(accessToken: string, token: string) {
 
   return body.item
 }
+
+export async function getPendingInvitationForCurrentUser(accessToken: string) {
+  const response = await fetch(`${getApiBaseUrl()}/invitations/pending-for-me`, {
+    headers: createAuthHeaders(accessToken),
+  })
+
+  const body = await parseJson<{ item: InvitationAcceptDetails | null } & { error?: string }>(
+    response,
+  )
+
+  if (!response.ok) {
+    throw new Error(body.error ?? 'Failed to load invitation')
+  }
+
+  return body.item
+}
+
+export async function acceptInvitationById(accessToken: string, invitationId: string) {
+  const response = await fetch(`${getApiBaseUrl()}/invitations/accept-by-id`, {
+    method: 'POST',
+    headers: createAuthHeaders(accessToken, true),
+    body: JSON.stringify({ invitationId }),
+  })
+
+  const body = await parseJson<Partial<MembershipAcceptResponse> & { error?: string }>(response)
+
+  if (!response.ok || !body.item) {
+    throw new Error(body.error ?? 'Failed to accept invitation')
+  }
+
+  return body.item
+}

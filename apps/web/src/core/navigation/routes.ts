@@ -1,6 +1,8 @@
 import type { RouteRecordRaw } from 'vue-router'
 import HomePage from '../../pages/HomePage.vue'
 import InvitationAcceptPage from '../../pages/InvitationAcceptPage.vue'
+import ForgotPasswordPage from '../../pages/ForgotPasswordPage.vue'
+import ResetPasswordPage from '../../pages/ResetPasswordPage.vue'
 import LoginPage from '../../pages/LoginPage.vue'
 import RegisterPage from '../../pages/RegisterPage.vue'
 import DocsIngestionPage from '../../pages/DocsIngestionPage.vue'
@@ -13,6 +15,8 @@ export const routeNames = {
   home: 'home',
   login: 'login',
   register: 'register',
+  forgotPassword: 'forgotPassword',
+  resetPassword: 'resetPassword',
   invitationAccept: 'invitationAccept',
   tenants: 'tenants',
   tenantCreate: 'tenantCreate',
@@ -100,6 +104,23 @@ export const routes: RouteRecordRaw[] = [
     meta: {
       layout: 'blank',
       guestOnly: true,
+    },
+  },
+  {
+    path: '/forgot-password',
+    name: routeNames.forgotPassword,
+    component: ForgotPasswordPage,
+    meta: {
+      layout: 'blank',
+      guestOnly: true,
+    },
+  },
+  {
+    path: '/reset-password',
+    name: routeNames.resetPassword,
+    component: ResetPasswordPage,
+    meta: {
+      layout: 'blank',
     },
   },
 ]
