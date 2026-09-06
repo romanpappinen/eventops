@@ -1,10 +1,32 @@
 {
   "$schema": "https://json-schema.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "failIfUnavailable": true,
+    "filesystem": {
+      "allowWrite": ["/.jbdevcontainer"]
+    },
+    "network": {
+      "allowedDomains": [
+        "api.anthropic.com",
+        "registry.npmjs.org",
+        "github.com"
+      ]
+    }
+  },
   "permissions": {
     "defaultMode": "default",
     "deny": [
       "Read(./.env)",
-      "Read(./.env.*)",
+      "Read(./.env.local)",
+      "Read(./.env.production)",
+      "Read(./.env.production.local)",
+      "Read(./.env.staging)",
       "Read(./.npmrc)",
       "Read(./supabase/.temp/**)",
       "Read(./supabase/.branches/**)",

@@ -23,11 +23,11 @@
   ],
   "postCreateCommand": "pnpm install",
   "runArgs": [
-    "--network=eventops-restricted",
     "--cap-drop=ALL",
     "--cap-add=CHOWN",
     "--cap-add=FOWNER",
-    "--security-opt=no-new-privileges:true"
+    "--security-opt=no-new-privileges:true",
+    "--security-opt=seccomp=unconfined"
   ],
   "containerEnv": {
     "NODE_ENV": "development",

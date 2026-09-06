@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { sha256Hex } from '@eventops/shared';
 
 export interface ApiKeyRow {
     id: string;
@@ -35,7 +36,7 @@ export function normalizeApiKeyRecord(record: ApiKeyRow): ApiKeyItem {
 const API_KEY_PREFIX = 'eo_live_';
 
 export function hashApiKey(rawKey: string): string {
-    return createHash('sha256').update(rawKey).digest('hex');
+    return sha256Hex(rawKey);
 }
 
 export function generateApiKey(): { rawKey: string; keyHash: string; keyPrefix: string } {

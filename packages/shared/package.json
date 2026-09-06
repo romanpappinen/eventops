@@ -10,5 +10,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "lint": "echo lint shared",
     "test": "echo test shared"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4"
   }
 }
