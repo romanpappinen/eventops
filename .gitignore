@@ -20,6 +20,9 @@ blob-report
 # turbo
 .turbo
 
+# local-only learning/reference docs, never committed
+*.local.html
+
 # OS
 .DS_Store
 
