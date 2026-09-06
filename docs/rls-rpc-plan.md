@@ -420,6 +420,7 @@ replace function` — do not leave both callable.
 | `archive_tenant` | `(p_tenant_id uuid)` | `0007` | none — introduced once, no drift |
 | `revoke_tenant_invitation` | `(p_tenant_id uuid, p_invitation_id uuid)` | `0009` | none — introduced once, no drift |
 | `accept_tenant_invitation_by_token` | `(p_token_hash text)` | `0011` | `accept_tenant_invitation(p_invitation_id uuid)` (`0008`, refined by `0009`) — dropped outright by `0011` in favor of the token-based flow. **Dead: do not call `accept_tenant_invitation` — the function no longer exists in the database.** (A dead app-code caller of the dropped function was found and removed 2026-07-10; see `diary.md`.) |
+| `accept_tenant_invitation_by_id` | `(p_invitation_id uuid)` | `0022` | none — introduced once, no drift. Tokenless sibling of `accept_tenant_invitation_by_token`, same checks/body matched on `id` instead of `accept_token_hash`; used when a user is authenticated with a verified email but never had (or lost) the accept token — see `2026-09-06` diary entry. **Keep both functions in sync** if either one's validation logic changes. |
 | `is_active_tenant_member`, `is_active_tenant_owner`, `is_active_tenant` | `(p_tenant_id uuid)` → `boolean` | `0013` | none — RLS policy helper functions, called only from `using`/`with check` clauses, never called directly by API code |
 
 Not an RPC, by design: invitation **resend** (`POST

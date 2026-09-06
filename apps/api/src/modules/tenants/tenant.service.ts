@@ -5,6 +5,7 @@ import { ensureUserProfile } from '../auth/ensure-user-profile.js';
 import { randomBytes } from 'node:crypto';
 import { sha256Hex } from '@eventops/shared';
 import type {
+    AcceptInvitationByIdInput,
     AcceptInvitationInput,
     CreateTenantInput,
     InvitationAcceptLookup,
@@ -509,30 +510,14 @@ export async function resendTenantInvitationForOwner(
     };
 }
 
-export async function getInvitationByToken(
-    authUser: NonNullable<AuthenticatedRequest['authUser']>,
-    query: InvitationAcceptLookup
-) {
+async function buildInvitationAcceptDetails(data: {
+    id: string;
+    tenant_id: string;
+    role: string;
+    status: 'pending' | 'accepted' | 'revoked' | 'expired';
+    accept_token_expires_at: string | null;
+}) {
     const supabaseAdmin = getSupabaseAdmin();
-    const tokenHash = hashInvitationAcceptToken(query.token);
-    const { data, error } = await supabaseAdmin
-        .from('tenant_invitations')
-        .select('id, tenant_id, email, role, status, accepted_at, invited_by_user_id, accept_token_expires_at')
-        .eq('accept_token_hash', tokenHash)
-        .maybeSingle();
-
-    if (error) {
-        throw createTenantError('Failed to load invitation', 502);
-    }
-
-    if (!data) {
-        throw createTenantError('Invitation not found', 404);
-    }
-
-    if (!authUser.email || authUser.email.toLowerCase() !== data.email.toLowerCase()) {
-        throw createTenantError('This invitation belongs to a different email address', 403);
-    }
-
     const { data: tenant, error: tenantError } = await supabaseAdmin
         .from('tenants')
         .select('id, name, status')
@@ -565,6 +550,94 @@ export async function getInvitationByToken(
     };
 }
 
+export async function getInvitationByToken(
+    authUser: NonNullable<AuthenticatedRequest['authUser']>,
+    query: InvitationAcceptLookup
+) {
+    const supabaseAdmin = getSupabaseAdmin();
+    const tokenHash = hashInvitationAcceptToken(query.token);
+    const { data, error } = await supabaseAdmin
+        .from('tenant_invitations')
+        .select('id, tenant_id, email, role, status, accepted_at, invited_by_user_id, accept_token_expires_at')
+        .eq('accept_token_hash', tokenHash)
+        .maybeSingle();
+
+    if (error) {
+        throw createTenantError('Failed to load invitation', 502);
+    }
+
+    if (!data) {
+        throw createTenantError('Invitation not found', 404);
+    }
+
+    if (!authUser.email || authUser.email.toLowerCase() !== data.email.toLowerCase()) {
+        throw createTenantError('This invitation belongs to a different email address', 403);
+    }
+
+    return buildInvitationAcceptDetails(data);
+}
+
+export async function getPendingInvitationForCurrentUser(
+    authUser: NonNullable<AuthenticatedRequest['authUser']>
+) {
+    if (!authUser.email) {
+        return null;
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data, error } = await supabaseAdmin
+        .from('tenant_invitations')
+        .select('id, tenant_id, role, status, accept_token_expires_at')
+        .eq('email', authUser.email.toLowerCase())
+        .eq('status', 'pending')
+        .gt('accept_token_expires_at', new Date().toISOString())
+        .order('accept_token_expires_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        throw createTenantError('Failed to load invitation', 502);
+    }
+
+    if (!data) {
+        return null;
+    }
+
+    return buildInvitationAcceptDetails(data);
+}
+
+function throwForAcceptInvitationRpcError(error: { message?: string }): never {
+    const message = error.message?.toLowerCase() ?? '';
+
+    if (message.includes('invitation not found')) {
+        throw createTenantError('Invitation not found', 404);
+    }
+
+    if (message.includes('invitation has expired')) {
+        throw createTenantError('Invitation has expired', 409);
+    }
+
+    if (message.includes('does not belong to authenticated user')) {
+        throw createTenantError('This invitation belongs to a different email address', 403);
+    }
+
+    if (message.includes('archived tenants cannot accept invitations')) {
+        throw createTenantError('Tenant is archived', 409);
+    }
+
+    throw createTenantError('Invitation acceptance failed', 502);
+}
+
+function extractAcceptedMembership(data: unknown) {
+    const membership = Array.isArray(data) ? data[0] : data;
+
+    if (!membership) {
+        throw createTenantError('Invitation acceptance did not return a membership', 500);
+    }
+
+    return membership;
+}
+
 export async function acceptTenantInvitationByTokenForUser(
     authUser: NonNullable<AuthenticatedRequest['authUser']>,
     authToken: string,
@@ -583,33 +656,33 @@ export async function acceptTenantInvitationByTokenForUser(
     });
 
     if (error) {
-        const message = error.message?.toLowerCase() ?? '';
-
-        if (message.includes('invitation not found')) {
-            throw createTenantError('Invitation not found', 404);
-        }
-
-        if (message.includes('invitation has expired')) {
-            throw createTenantError('Invitation has expired', 409);
-        }
-
-        if (message.includes('does not belong to authenticated user')) {
-            throw createTenantError('This invitation belongs to a different email address', 403);
-        }
-
-        if (message.includes('archived tenants cannot accept invitations')) {
-            throw createTenantError('Tenant is archived', 409);
-        }
-
-        throw createTenantError('Invitation acceptance failed', 502);
+        throwForAcceptInvitationRpcError(error);
     }
 
-    const membership = Array.isArray(data) ? data[0] : data;
+    return extractAcceptedMembership(data);
+}
 
-    if (!membership) {
-        throw createTenantError('Invitation acceptance did not return a membership', 500);
+export async function acceptTenantInvitationByIdForUser(
+    authUser: NonNullable<AuthenticatedRequest['authUser']>,
+    authToken: string,
+    input: AcceptInvitationByIdInput
+) {
+    await ensureUserProfile(authToken, {
+        id: authUser.id,
+        email: authUser.email ?? 'unknown@example.com',
+        fullName: authUser.fullName,
+        avatarUrl: authUser.avatarUrl,
+    });
+
+    const supabaseUser = getSupabaseUser(authToken);
+    const { data, error } = await supabaseUser.rpc('accept_tenant_invitation_by_id', {
+        p_invitation_id: input.invitationId,
+    });
+
+    if (error) {
+        throwForAcceptInvitationRpcError(error);
     }
 
-    return membership;
+    return extractAcceptedMembership(data);
 }
 

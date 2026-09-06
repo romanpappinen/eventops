@@ -2041,3 +2041,90 @@ new test scaffolding was added for this change.
    out of scope for this repo change, a human needs to do it.
 3. Commit this change once the above is confirmed working, or right
    away if the user wants to test it themselves first.
+
+---
+
+Date: 2026-09-06
+
+## Fixed: invitation never auto-accepted after signup + email confirmation
+
+Reported by the user against the live/production environment: sent an
+invitation, the invitee registered and confirmed their account, and the
+invitation stayed `pending` forever — the new user never saw the
+tenant.
+
+Root cause: the accept token only ever lives in `sessionStorage`,
+written by `InvitationAcceptPage.vue` when the page is opened with
+`?token=...` from the invite email. Production has email confirmations
+enabled (local `supabase/config.toml` disables them, which is exactly
+why this was never caught locally), so a brand-new registrant gets no
+session immediately — they have to click a *separate* confirmation
+link from their email client, which opens in a new browser context
+with no access to the original tab's `sessionStorage`. The accept RPC
+itself was never reached; it's fine.
+
+First considered threading the invite token through Supabase's
+`emailRedirectTo` on `signUp()`, reusing the existing
+`/accept-invite?token=...` shape. Rejected after the user pushed back
+on the security implications: Supabase wraps that URL in its own
+verification link, so the secret token would travel through a *second*
+email/provider we don't control — exposed to corporate email-security
+link-prescanners (which can burn a one-time token before the real user
+even opens the email) and to Referer/log leakage via query string.
+Right call to reject it; the token doesn't grant anything by itself
+(email is re-checked server-side either way), but there's no reason to
+add a second leak surface for the same secret when a cleaner option
+exists.
+
+Went with: once a user is authenticated with a Supabase-verified email,
+that email match is itself sufficient authorization — no token needed.
+This is the same principle `getInvitationByToken` already used (compare
+`authUser.email` to the invitation's `email` column server-side).
+
+Changes:
+- New migration `0022_accept_tenant_invitation_by_id.sql`: RPC
+  `accept_tenant_invitation_by_id(p_invitation_id uuid)`, a tokenless
+  sibling of `accept_tenant_invitation_by_token` (`0011`) — same checks
+  (email match, pending, unexpired, tenant active), matched by `id`
+  instead of `accept_token_hash`. Documented in
+  `docs/rls-rpc-plan.md`'s canonical RPC table with a note to keep both
+  functions in sync.
+- `apps/api`: new `GET /invitations/pending-for-me` (looks up a pending
+  invitation by the authenticated user's own email via the admin
+  client, same pattern as the existing by-token lookup) and `POST
+  /invitations/accept-by-id`. Factored the RPC-error-to-`ApiError`
+  mapping and the invitation-response-shape building out of the
+  existing by-token functions in `tenant.service.ts` so both paths
+  share one copy of that logic instead of duplicating it.
+- `InvitationAcceptPage.vue`: when there's no token (URL or
+  sessionStorage) but the user is authenticated, falls back to the new
+  by-email lookup and, on accept, calls the by-id endpoint instead of
+  by-token. The original token-based flow is untouched.
+- `HomePage.vue`: on mount, checks for a pending invitation via the
+  same lookup and redirects to `/accept-invite` if one exists — this is
+  what actually gets a user who lands back on the app root after
+  confirming their email routed to the accept page, with no Supabase
+  redirect/env config changes needed anywhere.
+- Immediate mitigation for the user's already-stuck invite (no code
+  needed, told to the user directly): reopen the *original* invitation
+  email link in the same browser used to confirm the account —
+  supabase-js persists sessions in `localStorage` (survives new tabs),
+  so the page should now find them already authenticated and accept
+  normally.
+
+Verified: `pnpm --filter api typecheck` and `pnpm --filter web
+typecheck` both pass. Could not exercise end-to-end — no live Supabase
+project with confirmations enabled, no real email, no local Docker
+Supabase stack in this sandbox to apply migration `0022` against.
+
+## What we need to do next
+
+1. **A human needs to apply migration `0022` to production** (this
+   assistant does not run production migrations, per `CLAUDE.md`) via
+   the normal PR review → CI → deploy path.
+2. Manual walkthrough on production after the migration lands: invite →
+   register → confirm via email → land on `/` → auto-redirected to
+   `/accept-invite` → click Accept → tenant appears.
+3. Tell the currently-stuck invited user to reopen their original
+   invitation email link in the same browser they confirmed their
+   account in (see mitigation above) rather than waiting on this fix.
